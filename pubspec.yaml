@@ -1,0 +1,13 @@
+name: print_optimizer
+description: Personal 3D print optimizer starter for Android and Windows.
+publish_to: none
+version: 0.1.0+1
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: ^2.3.2
+  mobile_scanner: ^6.0.2
+flutter:
+  uses-material-design: true
