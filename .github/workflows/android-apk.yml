@@ -36,6 +36,18 @@ jobs:
       - name: Android SDK kontrollieren
         run: |
           grep -n "compileSdk" android/app/build.gradle.kts
+      - name: Android SDK 36 fuer alle Plugins
+        run: |
+          cat >> android/build.gradle.kts <<'EOF'
+
+          subprojects {
+              plugins.withId("com.android.library") {
+                  extensions.findByType(
+                      com.android.build.gradle.BaseExtension::class.java
+                  )?.compileSdkVersion(36)
+              }
+          }
+          EOF
       - name: Kamera und Internet Berechtigungen eintragen
         run: |
           python3 - <<'PY'
