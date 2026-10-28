@@ -37,7 +37,7 @@ jobs:
           p = Path('android/app/build.gradle.kts')
           if p.exists():
               s = p.read_text()
-              s = s.replace('compileSdk = flutter.compileSdkVersion', 'compileSdk = 36')
+              s = s.replace('flutter.compileSdkVersion', '36')
               p.write_text(s)
           else:
               p = Path('android/app/build.gradle')
