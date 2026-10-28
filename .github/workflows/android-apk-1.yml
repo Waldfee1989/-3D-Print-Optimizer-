@@ -1,0 +1,64 @@
+name: Android APK erstellen
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Projekt herunterladen
+        uses: actions/checkout@v4
+
+      - name: Java einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Flutter installieren
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Android-Projekt erstellen
+        run: flutter create . --platforms=android
+
+      - name: Kamera und Internet Berechtigungen eintragen
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          for permission in ('android.permission.CAMERA', 'android.permission.INTERNET'):
+              if permission not in s:
+                  pos = s.index('>', s.index('<manifest')) + 1
+                  s = s[:pos] + f'\n    <uses-permission android:name="{permission}" />' + s[pos:]
+          p.write_text(s)
+          PY
+
+      - name: Abhaengigkeiten installieren
+        run: flutter pub get
+
+      - name: APK erstellen
+        run: flutter build apk --release --build-number=${{ github.run_number }}
+
+      - name: APK bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3D-Print-Optimizer-Android
+          path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: APK als Release veroeffentlichen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: 3D Print Optimizer Build ${{ github.run_number }}
+          files: build/app/outputs/flutter-apk/app-release.apk
