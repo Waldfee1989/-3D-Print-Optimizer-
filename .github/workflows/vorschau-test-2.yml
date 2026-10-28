@@ -1,0 +1,258 @@
+name: 3D-Vorschau pruefen
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - 3d-vorschau-test
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/vorschau-test.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  preview-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Code herunterladen
+        uses: actions/checkout@v4
+
+      - name: Flutter einrichten
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Tests fuer diesen Lauf bereitstellen
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path('pubspec.yaml')
+          text = p.read_text()
+          if '\ndev_dependencies:' not in text:
+              p.write_text(text + '\ndev_dependencies:\n  flutter_test:\n    sdk: flutter\n')
+          elif '\n  flutter_test:' not in text:
+              raise SystemExit('flutter_test bitte in dev_dependencies ergaenzen.')
+          PYTHON
+          mkdir -p test/preview_ci
+          cat > test/preview_ci/mesh_renderer_test.dart <<'DART'
+          import 'dart:typed_data';
+          
+          import 'package:flutter_test/flutter_test.dart';
+          import 'package:print_optimizer/mesh_renderer.dart';
+          
+          Uint8List render(List<double> vertices, {double zoom = 1, double angleY = 0}) =>
+              renderMesh(
+                MeshRenderRequest(
+                  Float32List.fromList(vertices),
+                  100,
+                  100,
+                  0,
+                  angleY,
+                  zoom,
+                ),
+              );
+          
+          List<int> pixel(Uint8List image, int x, int y) =>
+              image.sublist((y * 100 + x) * 4, (y * 100 + x + 1) * 4);
+          
+          void main() {
+            const a = [-.8, -.8, -.4, .8, -.8, .4, 0.0, .8, 0.0];
+            const b = [-.8, -.8, .4, .8, -.8, -.4, 0.0, .8, 0.0];
+          
+            test('Filled interiors and transparent background', () {
+              final image = render(a);
+              expect(pixel(image, 50, 50)[3], 255);
+              expect(pixel(image, 0, 0)[3], 0);
+            });
+          
+            test(
+              'Intersecting faces use per-pixel depth independently of file order',
+              () {
+                final combined = render([...a, ...b]);
+                expect(combined, orderedEquals(render([...b, ...a])));
+                expect(pixel(combined, 40, 60), pixel(render(b), 40, 60));
+                expect(pixel(combined, 60, 60), pixel(render(a), 60, 60));
+                expect(pixel(render(a), 40, 60), isNot(pixel(render(b), 40, 60)));
+              },
+            );
+          
+            test('Adjacent faces cover a square without seams', () {
+              final image = render([
+                -.8,
+                -.8,
+                0,
+                .8,
+                -.8,
+                0,
+                .8,
+                .8,
+                0,
+                -.8,
+                -.8,
+                0,
+                .8,
+                .8,
+                0,
+                -.8,
+                .8,
+                0,
+              ]);
+              for (var y = 17; y < 83; y++) {
+                for (var x = 17; x < 83; x++) {
+                  expect(pixel(image, x, y)[3], 255, reason: 'Gap at $x,$y');
+                }
+              }
+            });
+          
+            test('Reverse winding remains visible', () {
+              expect(
+                render(a),
+                orderedEquals(
+                  render([...a.sublist(6, 9), ...a.sublist(3, 6), ...a.sublist(0, 3)]),
+                ),
+              );
+            });
+          
+            test('Zoom increases coverage and rotation changes the image', () {
+              int covered(Uint8List image) {
+                var count = 0;
+                for (var i = 3; i < image.length; i += 4) {
+                  if (image[i] != 0) count++;
+                }
+                return count;
+              }
+          
+              expect(covered(render(a, zoom: 2)), greaterThan(covered(render(a))));
+              expect(render(a, angleY: 45), isNot(orderedEquals(render(a))));
+              expect(render(a, zoom: 5).length, 100 * 100 * 4);
+            });
+          
+            test('Degenerate and offscreen faces are safe', () {
+              expect(render(List.filled(9, 0)), everyElement(0));
+              expect(render([10, 10, 0, 11, 10, 0, 10, 11, 0]), everyElement(0));
+            });
+          
+            test('Faces beyond the old 3500 limit are rendered', () {
+              final image = render([
+                for (var i = 0; i < 4000; i++) ...List<double>.filled(9, 0),
+                ...a,
+              ]);
+              expect(pixel(image, 50, 50)[3], 255);
+            });
+          }
+          DART
+          cat > test/preview_ci/model_preview_test.dart <<'DART'
+          import 'dart:convert';
+          
+          import 'package:file_picker/file_picker.dart';
+          import 'package:flutter/material.dart';
+          import 'package:flutter_test/flutter_test.dart';
+          import 'package:print_optimizer/main.dart';
+          
+          class _Picker extends FilePicker {
+            @override
+            Future<FilePickerResult?> pickFiles({
+              String? dialogTitle,
+              String? initialDirectory,
+              FileType type = FileType.any,
+              List<String>? allowedExtensions,
+              Function(FilePickerStatus)? onFileLoading,
+              bool allowCompression = true,
+              int compressionQuality = 30,
+              bool allowMultiple = false,
+              bool withData = false,
+              bool withReadStream = false,
+              bool lockParentWindow = false,
+              bool readSequential = false,
+            }) async {
+              final bytes = utf8.encode(
+                'solid test\n'
+                'facet normal 0 0 1\nouter loop\n'
+                'vertex 0 0 0\nvertex 20 0 0\nvertex 0 20 0\n'
+                'endloop\nendfacet\nendsolid test',
+              );
+              return FilePickerResult([
+                PlatformFile(name: 'test.stl', size: bytes.length, bytes: bytes),
+              ]);
+            }
+          }
+          
+          Future<void> loadModel(WidgetTester tester) async {
+            FilePicker.platform = _Picker();
+            await tester.pumpWidget(const MaterialApp(home: ModelPreviewPage()));
+            await tester.tap(find.text('STL / 3MF auswählen'));
+            await tester.pump();
+            await tester.pump();
+            expect(find.text('test.stl'), findsOneWidget);
+          }
+          
+          void main() {
+            testWidgets('One finger rotates horizontally and vertically inside the list', (
+              tester,
+            ) async {
+              await loadModel(tester);
+              // The render worker may still be running; gestures use the preview bounds.
+              final area = find.byType(ClipRRect).first;
+              await tester.drag(area, const Offset(60, 0));
+              await tester.pump();
+              expect(find.text('Horizontal drehen: 30°'), findsNothing);
+              await tester.drag(area, const Offset(0, 60));
+              await tester.pump();
+              expect(find.text('Vertikal drehen: 25°'), findsNothing);
+              expect(find.text('Zoom: 100 %'), findsOneWidget);
+              expect(tester.takeException(), isNull);
+              // Disposing while rendering must not update disposed state.
+              await tester.pumpWidget(const SizedBox());
+              await tester.runAsync(() async {
+                await Future<void>.delayed(const Duration(milliseconds: 150));
+              });
+              expect(tester.takeException(), isNull);
+            });
+          
+            testWidgets('Two fingers zoom; reset restores zoom and both angles', (
+              tester,
+            ) async {
+              await loadModel(tester);
+              final center = tester.getCenter(find.byType(ClipRRect).first);
+              final first = await tester.startGesture(
+                center - const Offset(30, 0),
+                pointer: 1,
+              );
+              final second = await tester.startGesture(
+                center + const Offset(30, 0),
+                pointer: 2,
+              );
+              await first.moveTo(center - const Offset(65, 0));
+              await second.moveTo(center + const Offset(65, 0));
+              await tester.pump();
+              await first.moveTo(center - const Offset(90, 0));
+              await second.moveTo(center + const Offset(90, 0));
+              await tester.pump();
+              await first.up();
+              await second.up();
+              expect(find.text('Zoom: 100 %'), findsNothing);
+              await tester.ensureVisible(find.text('Ansicht zurücksetzen'));
+              await tester.tap(find.text('Ansicht zurücksetzen'));
+              await tester.pump();
+              expect(find.text('Zoom: 100 %'), findsOneWidget);
+              expect(find.text('Horizontal drehen: 30°'), findsOneWidget);
+              expect(find.text('Vertikal drehen: 25°'), findsOneWidget);
+              await tester.pumpWidget(const SizedBox());
+            });
+          }
+          DART
+
+      - name: Abhaengigkeiten laden
+        run: flutter pub get
+
+      - name: Statische Pruefung
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+
+      - name: Oberflaechen und Touch-Gesten testen
+        run: flutter test test/preview_ci --reporter expanded
