@@ -1,3 +1,4 @@
+
 name: Android APK erstellen
 
 on:
@@ -12,6 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Projekt herunterladen
         uses: actions/checkout@v4
@@ -30,44 +32,96 @@ jobs:
 
       - name: Android-Projekt erstellen
         run: flutter create . --platforms=android
+
       - name: Android SDK 36 einstellen
-        run: |
-          python3 -c "from pathlib import Path; p=Path('android/app/build.gradle.kts'); s=p.read_text(); s=s.replace('flutter.compileSdkVersion', '36'); p.write_text(s)"
-      - name: Android SDK kontrollieren
-        run: |
-          grep -n "compileSdk" android/app/build.gradle.kts
-      - name: Android SDK 36 fuer alle Plugins
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('android/build.gradle.kts')
+          import re
+
+          p = Path('android/app/build.gradle.kts')
+          if not p.exists():
+              raise SystemExit('Android Gradle-Datei fehlt')
+
           s = p.read_text()
-          s += '''
-          subprojects {
-              plugins.withId("com.android.library") {
-                  extensions.configure<com.android.build.gradle.LibraryExtension> {
-                      compileSdk = 36
-                  }
-              }
-          }
-          '''
+          s, count = re.subn(
+              r'compileSdk\s*=\s*(?:flutter\.compileSdkVersion|\d+)',
+              'compileSdk = 36',
+              s
+          )
+
+          if count == 0:
+              raise SystemExit('compileSdk-Einstellung nicht gefunden')
+
           p.write_text(s)
+          print('App compileSdk auf 36 eingestellt')
           PY
+
       - name: Kamera und Internet Berechtigungen eintragen
         run: |
           python3 - <<'PY'
           from pathlib import Path
+
           p = Path('android/app/src/main/AndroidManifest.xml')
           s = p.read_text()
-          for permission in ('android.permission.CAMERA', 'android.permission.INTERNET'):
+
+          for permission in (
+              'android.permission.CAMERA',
+              'android.permission.INTERNET'
+          ):
               if permission not in s:
                   pos = s.index('>', s.index('<manifest')) + 1
-                  s = s[:pos] + f'\n    <uses-permission android:name="{permission}" />' + s[pos:]
+                  s = (
+                      s[:pos]
+                      + f'\n    <uses-permission android:name="{permission}" />'
+                      + s[pos:]
+                  )
+
           p.write_text(s)
           PY
 
       - name: Abhaengigkeiten installieren
         run: flutter pub get
+
+      - name: Android SDK 36 fuer file_picker einstellen
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          root = Path.home() / '.pub-cache' / 'hosted' / 'pub.dev'
+
+          files = list(root.glob('file_picker-*/android/build.gradle'))
+          files += list(root.glob('file_picker-*/android/build.gradle.kts'))
+
+          if not files:
+              raise SystemExit('file_picker Gradle-Datei nicht gefunden')
+
+          for p in files:
+              s = p.read_text()
+
+              if p.suffix == '.kts':
+                  s, count = re.subn(
+                      r'compileSdk\s*=\s*\d+',
+                      'compileSdk = 36',
+                      s
+                  )
+              else:
+                  s, count = re.subn(
+                      r'compileSdk(?:Version)?\s*(?:=\s*)?\d+',
+                      'compileSdkVersion 36',
+                      s
+                  )
+
+              if count == 0:
+                  raise SystemExit(
+                      f'compileSdk in {p} nicht gefunden'
+                  )
+
+              p.write_text(s)
+              print(f'Android SDK 36 eingestellt: {p}')
+
+          PY
 
       - name: APK erstellen
         run: flutter build apk --release --build-number=${{ github.run_number }}
@@ -84,3 +138,4 @@ jobs:
           tag_name: build-${{ github.run_number }}
           name: 3D Print Optimizer Build ${{ github.run_number }}
           files: build/app/outputs/flutter-apk/app-release.apk
+          
