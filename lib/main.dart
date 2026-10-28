@@ -1,5 +1,7 @@
-
 import 'dart:convert';
+import 'dart:io';
+import 'package:package_info_plus/package_info_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -24,7 +26,51 @@ class _HomePageState extends State<HomePage> {
   String printer = 'Anycubic Kobra S1', slicer = 'Anycubic Slicer', nozzle = '0.4';
   bool configured = false;
   List<Map<String, dynamic>> stock = [];
-  @override void initState() { super.initState(); load(); }
+  @override void initState() { super.initState(); load(); WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdates()); }
+
+  Future<void> checkForUpdates() async {
+    if (!Platform.isAndroid || !mounted) return;
+    HttpClient? client;
+    try {
+      client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
+      final request = await client.getUrl(Uri.parse(
+        'https://api.github.com/repos/Waldfee1989/-3D-Print-Optimizer-/releases/latest'));
+      request.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
+      request.headers.set(HttpHeaders.userAgentHeader, '3D-Print-Optimizer');
+      final response = await request.close();
+      if (response.statusCode != 200) return;
+      final data = jsonDecode(await response.transform(utf8.decoder).join()) as Map<String, dynamic>;
+      final tag = (data['tag_name'] ?? '').toString();
+      final match = RegExp(r'(?i)build-(\d+)').firstMatch(tag);
+      if (match == null) return;
+      final remoteBuild = int.tryParse(match.group(1)!) ?? 0;
+      final installed = await PackageInfo.fromPlatform();
+      final installedBuild = int.tryParse(installed.buildNumber) ?? 0;
+      if (remoteBuild <= installedBuild || !mounted) return;
+      final assets = (data['assets'] as List? ?? []);
+      final apk = assets.whereType<Map>().where((a) =>
+        a['name'] == 'app-release.apk').toList();
+      if (apk.isEmpty) return;
+      final url = Uri.tryParse((apk.first['browser_download_url'] ?? '').toString());
+      if (url == null || url.scheme != 'https') return;
+      final update = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Update verfügbar'),
+        content: Text('Build $remoteBuild ist verfügbar. Installiert: Build $installedBuild.\n\nAPK herunterladen und Android-Installation öffnen?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Später')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Herunterladen')),
+        ],
+      ));
+      if (update == true) {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      }
+    } catch (_) {
+      // Ohne Internet kann die App normal weiterverwendet werden.
+    } finally {
+      client?.close(force: true);
+    }
+  }
+
   Future<void> load() async {
     final p = await SharedPreferences.getInstance();
     if (!mounted) return;
@@ -53,7 +99,7 @@ class _HomePageState extends State<HomePage> {
       StatefulBuilder(builder: (ctx, update) => AlertDialog(
         title: const Text('Ersteinrichtung'),
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Drucker, Slicer und Düse auswählen. Später änderbar.'),
+          const Text('Drucker, Slicer und Düse ausw��hlen. Später änderbar.'),
           TextField(controller: TextEditingController(text: pr),
             decoration: const InputDecoration(labelText: 'Druckermodell'),
             onChanged: (v) => pr=v),
@@ -88,7 +134,7 @@ class _HomePageState extends State<HomePage> {
           keyboardType: field.$2.startsWith('Restmenge') ? TextInputType.number : TextInputType.text),
       ])),
       actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Abbrechen')),
-        FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Hinzufügen'))],
+        FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Hinzuf��gen'))],
     ));
     if(ok==true) {
       setState(()=>stock.add({'barcode':code.text.trim(),'brand':brand.text.trim(),
@@ -116,6 +162,7 @@ class _HomePageState extends State<HomePage> {
   }
   @override Widget build(BuildContext context) => Scaffold(
     appBar:AppBar(title:const Text('3D Print Optimizer'),actions:[
+      IconButton(tooltip:'Updates prüfen',onPressed:checkForUpdates,icon:const Icon(Icons.system_update)),
       IconButton(tooltip:'Einrichtung',onPressed:setup,icon:const Icon(Icons.settings)),
     ]),
     body:prefs==null ? const Center(child:CircularProgressIndicator()) :
@@ -125,7 +172,7 @@ class _HomePageState extends State<HomePage> {
           subtitle:const Text('Drucker und Slicer einmal festlegen'),
           trailing:const Icon(Icons.arrow_forward),onTap:setup)),
         Card(child:ListTile(title:Text(printer),
-          subtitle:Text('$slicer · Düse $nozzle mm'),leading:const Icon(Icons.print))),
+          subtitle:Text('$slicer – Düse $nozzle mm'),leading:const Icon(Icons.print))),
         const SizedBox(height:12),
         const Text('Mein Filamentlager',style:TextStyle(fontSize:22,fontWeight:FontWeight.bold)),
         const SizedBox(height:8),
@@ -136,7 +183,7 @@ class _HomePageState extends State<HomePage> {
         for(var i=0;i<stock.length;i++)
           Card(child:ListTile(
             title:Text('${stock[i]['brand']} ${stock[i]['material']} ${stock[i]['color']}'),
-            subtitle:Text('${stock[i]['grams']} g · Barcode: ${stock[i]['barcode']}'),
+            subtitle:Text('${stock[i]['grams']} g – Barcode: ${stock[i]['barcode']}'),
             trailing:IconButton(icon:const Icon(Icons.delete_outline),onPressed:()async{
               setState(()=>stock.removeAt(i)); await save();
             }),
