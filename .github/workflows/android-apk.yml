@@ -1,13 +1,13 @@
-
 name: Android APK erstellen
-permissions:
-  contents: write
-  
+
 on:
   workflow_dispatch:
   push:
     branches:
       - main
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -26,19 +26,53 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
       - name: Android-Projekt erstellen
         run: flutter create . --platforms=android
 
-      - name: Kamera-Berechtigung eintragen
+      - name: Kamera und Internet Berechtigungen eintragen
         run: |
-          sed -i '/<manifest /a\    <uses-permission android:name="android.permission.CAMERA" />' android/app/src/main/AndroidManifest.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text()
+          for permission in ('android.permission.CAMERA', 'android.permission.INTERNET'):
+              if permission not in s:
+                  s = s.replace('<manifest ', f'<manifest ', 1)
+                  pos = s.index('>', s.index('<manifest')) + 1
+                  s = s[:pos] + f'\n    <uses-permission android:name="{permission}" />' + s[pos:]
+          p.write_text(s)
+          PY
 
-      - name: Abhängigkeiten installieren
+      - name: Abhaengigkeiten installieren
         run: flutter pub get
 
+      - name: Mobile Scanner Kamera Backend auf ML Kit unbundled umstellen
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          root = Path.home() / '.pub-cache' / 'hosted' / 'pub.dev'
+          matches = sorted(root.glob('mobile_scanner-6.*'))
+          if not matches:
+              raise SystemExit('mobile_scanner 6.x nicht im Pub Cache gefunden')
+          gradle = matches[-1] / 'android' / 'build.gradle'
+          if not gradle.exists():
+              raise SystemExit(f'Plugin Gradle Datei fehlt: {gradle}')
+          text = gradle.read_text()
+          # The plugin's bundled ML Kit dependency is replaced by the Play Services variant.
+          old = 'com.google.mlkit:barcode-scanning'
+          new = 'com.google.android.gms:play-services-mlkit-barcode-scanning'
+          if old not in text:
+              raise SystemExit('Erwartete ML Kit Abhaengigkeit nicht gefunden; Build gestoppt statt blind zu patchen')
+          text = text.replace(old, new)
+          gradle.write_text(text)
+          print(f'ML Kit Backend angepasst: {gradle}')
+          PY
+
       - name: APK erstellen
-        run: flutter build apk --release
+        run: flutter build apk --release --build-number=${{ github.run_number }}
 
       - name: APK bereitstellen
         uses: actions/upload-artifact@v4
@@ -46,7 +80,7 @@ jobs:
           name: 3D-Print-Optimizer-Android
           path: build/app/outputs/flutter-apk/app-release.apk
 
-      - name: APK als Release veröffentlichen
+      - name: APK als Release veroeffentlichen
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
