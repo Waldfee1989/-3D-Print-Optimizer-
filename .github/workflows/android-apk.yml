@@ -44,7 +44,10 @@ jobs:
               s = p.read_text()
               s = s.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 36')
               p.write_text(s)
-          PY
+          PY 
+      - name: Android SDK kontrollieren
+        run: |
+          grep -n "compileSdk" android/app/build.gradle.kts
       - name: Kamera und Internet Berechtigungen eintragen
         run: |
           python3 - <<'PY'
