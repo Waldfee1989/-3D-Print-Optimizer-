@@ -1,6 +1,8 @@
 
 name: Android APK erstellen
-
+permissions:
+  contents: write
+  
 on:
   workflow_dispatch:
   push:
@@ -43,4 +45,10 @@ jobs:
         with:
           name: 3D-Print-Optimizer-Android
           path: build/app/outputs/flutter-apk/app-release.apk
-          
+
+      - name: APK als Release veröffentlichen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: 3D Print Optimizer Build ${{ github.run_number }}
+          files: build/app/outputs/flutter-apk/app-release.apk
