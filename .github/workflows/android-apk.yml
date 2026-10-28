@@ -31,7 +31,7 @@ jobs:
       - name: Android-Projekt erstellen
         run: flutter create . --platforms=android
       - name: Android SDK 36 einstellen
-        run: |
+                run: |
           python3 - <<'PY'
           from pathlib import Path
           p = Path('android/app/build.gradle.kts')
@@ -44,7 +44,7 @@ jobs:
               s = p.read_text()
               s = s.replace('compileSdkVersion flutter.compileSdkVersion', 'compileSdkVersion 36')
               p.write_text(s)
-          PY 
+          PY
       - name: Android SDK kontrollieren
         run: |
           grep -n "compileSdk" android/app/build.gradle.kts
