@@ -38,16 +38,21 @@ jobs:
           grep -n "compileSdk" android/app/build.gradle.kts
       - name: Android SDK 36 fuer alle Plugins
         run: |
-          cat >> android/build.gradle.kts <<'EOF'
-
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('android/build.gradle.kts')
+          s = p.read_text()
+          s += '''
           subprojects {
               plugins.withId("com.android.library") {
-                  extensions.findByType(
-                      com.android.build.gradle.BaseExtension::class.java
-                  )?.compileSdkVersion(36)
+                  extensions.configure<com.android.build.gradle.LibraryExtension> {
+                      compileSdk = 36
+                  }
               }
           }
-          EOF
+          '''
+          p.write_text(s)
+          PY
       - name: Kamera und Internet Berechtigungen eintragen
         run: |
           python3 - <<'PY'
