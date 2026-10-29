@@ -24,6 +24,9 @@ def verify(apk):
     )
     if result.returncode:
         raise RuntimeError("APK-Signaturpruefung fehlgeschlagen.")
+    # apksigner output contains only public certificate metadata.
+    print("Android signing tool:", tool.parent.name)
+    print(result.stdout, flush=True)
     certificates = re.findall(
         r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)$",
         result.stdout, flags=re.MULTILINE,
