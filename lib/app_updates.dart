@@ -274,7 +274,11 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with WidgetsBindingOb
           ],
         ]),
       actions: [
-        TextButton(onPressed: () { downloader.cancel(); Navigator.pop(context); },
+        TextButton(onPressed: () {
+          downloader.cancel();
+          installer.cancel();
+          Navigator.pop(context);
+        },
           child: Text(busy ? 'Abbrechen' : 'Schließen')),
         if (!busy && permissionNeeded)
           FilledButton(onPressed: allowInstallation, child: const Text('Installation erlauben')),
