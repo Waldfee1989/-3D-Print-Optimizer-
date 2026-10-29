@@ -106,5 +106,38 @@ class SigningTests(unittest.TestCase):
                     verify.verify(self.root / "app.apk")
 
 
+    def test_apk_verifier_accepts_legacy_and_sdk37_certificate_labels(self):
+        tool = self.root / "build-tools/37.0.0/apksigner"
+        tool.parent.mkdir(parents=True)
+        tool.touch()
+        digest = verify.expected_fingerprint()
+        for labels in [("Signer #1",), ("V2 Signer:",),
+                       ("V2 Signer:", "V3 Signer:")]:
+            with self.subTest(labels=labels):
+                output = "Verifies\nNumber of signers: 1\n" + "".join(
+                    f"{label} certificate SHA-256 digest: {digest}\n"
+                    for label in labels)
+                with patch.dict(os.environ, {"ANDROID_HOME": str(self.root)}), \
+                        patch.object(verify.subprocess, "run", return_value=
+                                     subprocess.CompletedProcess([], 0, stdout=output)):
+                    verify.verify(self.root / "app.apk")
+
+    def test_apk_verifier_rejects_missing_unknown_and_mixed_certificates(self):
+        tool = self.root / "build-tools/37.0.0/apksigner"
+        tool.parent.mkdir(parents=True)
+        tool.touch()
+        digest = verify.expected_fingerprint()
+        good = f"V2 Signer: certificate SHA-256 digest: {digest}\n"
+        for output in ["Verifies\n", good.replace(digest, "0" * 64),
+                       good + "V3 Signer: certificate SHA-256 digest: " + "0" * 64 + "\n",
+                       good + f"Unknown certificate SHA-256 digest: {digest}\n"]:
+            with self.subTest(output=output), \
+                    patch.dict(os.environ, {"ANDROID_HOME": str(self.root)}), \
+                    patch.object(verify.subprocess, "run", return_value=
+                                 subprocess.CompletedProcess([], 0, stdout=output)):
+                with self.assertRaises(RuntimeError):
+                    verify.verify(self.root / "app.apk")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -28,10 +28,15 @@ def verify(apk):
     print("Android signing tool:", tool.parent.name)
     print(result.stdout, flush=True)
     certificates = re.findall(
-        r"^Signer #\d+ certificate SHA-256 digest: ([0-9a-fA-F]+)$",
+        r"^(?:Signer #\d+|V[1-4](?:\.\d+)? Signer:) certificate SHA-256 digest: ([0-9a-fA-F]{64})$",
         result.stdout, flags=re.MULTILINE,
     )
-    if [value.lower() for value in certificates] != [expected_fingerprint()]:
+    # Recent apksigner versions report certificates per signature scheme.
+    # Every reported signer must still use the one pinned certificate.
+    reported = re.findall(r"^.* certificate SHA-256 digest:.*$", result.stdout,
+                          flags=re.MULTILINE)
+    if (not certificates or len(reported) != len(certificates)
+            or any(value.lower() != expected_fingerprint() for value in certificates)):
         raise RuntimeError("APK besitzt nicht das festgelegte Signaturzertifikat.")
     print("APK-Signatur geprueft. SHA-256:", certificates[0])
 
