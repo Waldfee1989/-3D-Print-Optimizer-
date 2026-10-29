@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - 3d-vorschau-test
+      - larger-model-imports
     paths:
       - 'lib/**'
       - 'pubspec.yaml'
@@ -149,6 +150,7 @@ jobs:
           DART
           cat > test/preview_ci/model_preview_test.dart <<'DART'
           import 'dart:convert';
+          import 'dart:typed_data';
 
           import 'package:file_picker/file_picker.dart';
           import 'package:flutter/material.dart';
@@ -156,6 +158,9 @@ jobs:
           import 'package:print_optimizer/main.dart';
 
           class _Picker extends FilePicker {
+            _Picker({this.paddingBytes = 0, this.reportedSize});
+            final int paddingBytes;
+            final int? reportedSize;
             @override
             Future<FilePickerResult?> pickFiles({
               String? dialogTitle,
@@ -171,28 +176,53 @@ jobs:
               bool lockParentWindow = false,
               bool readSequential = false,
             }) async {
-              final bytes = utf8.encode(
+              final small = utf8.encode(
                 'solid test\n'
                 'facet normal 0 0 1\nouter loop\n'
                 'vertex 0 0 0\nvertex 20 0 0\nvertex 0 20 0\n'
                 'endloop\nendfacet\nendsolid test',
               );
+              final bytes = Uint8List(paddingBytes > small.length ? paddingBytes : small.length)
+                ..fillRange(0, paddingBytes > small.length ? paddingBytes : small.length, 32)
+                ..setRange(0, small.length, small);
               return FilePickerResult([
-                PlatformFile(name: 'test.stl', size: bytes.length, bytes: bytes),
+                PlatformFile(name: 'test.stl', size: reportedSize ?? bytes.length, bytes: bytes),
               ]);
             }
           }
 
-          Future<void> loadModel(WidgetTester tester) async {
-            FilePicker.platform = _Picker();
+          Future<void> loadModel(WidgetTester tester, {_Picker? picker}) async {
+            FilePicker.platform = picker ?? _Picker();
             await tester.pumpWidget(const MaterialApp(home: ModelPreviewPage()));
             await tester.tap(find.text('STL / 3MF auswählen'));
-            await tester.pump();
-            await tester.pump();
+            // compute runs on a real isolate, outside the widget test's fake clock.
+            for (var attempt = 0; attempt < 200; attempt++) {
+              await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
+              await tester.pump();
+              if (find.text('test.stl').evaluate().isNotEmpty) break;
+            }
             expect(find.text('test.stl'), findsOneWidget);
           }
 
           void main() {
+            testWidgets('Imports STL larger than the old 30 MB limit', (tester) async {
+              await loadModel(tester, picker: _Picker(paddingBytes: 31 * 1024 * 1024));
+              expect(find.text('Dreiecke: 1'), findsOneWidget);
+              expect(tester.takeException(), isNull);
+              await tester.pumpWidget(const SizedBox());
+            });
+
+            testWidgets('Rejects files above 100 MB before parsing', (tester) async {
+              FilePicker.platform = _Picker(reportedSize: 101 * 1024 * 1024);
+              await tester.pumpWidget(const MaterialApp(home: ModelPreviewPage()));
+              await tester.tap(find.text('STL / 3MF auswählen'));
+              await tester.pump();
+              expect(find.textContaining('größer als 100 MB'), findsOneWidget);
+              expect(find.text('test.stl'), findsNothing);
+              expect(tester.takeException(), isNull);
+              await tester.pumpWidget(const SizedBox());
+            });
+
             testWidgets('One finger rotates horizontally and vertically inside the list', (
               tester,
             ) async {
