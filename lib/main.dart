@@ -15,6 +15,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'app_updates.dart';
 import 'filament_inventory.dart';
 import 'filament_scanner.dart';
+import 'material_advice.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -233,6 +234,12 @@ class _HomePageState extends State<HomePage> {
         Card(child:ListTile(title:Text(printer),
           subtitle:Text('$slicer · Düse $nozzle mm'),leading:const Icon(Icons.print))),
         const SizedBox(height: 12),
+        Card(child: ListTile(leading: const Icon(Icons.lightbulb_outline),
+          title: const Text('Materialempfehlung'),
+          subtitle: const Text('Deko, Gebrauchsteil, draußen oder biegsam?'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
+            MaterialAdvicePage(quality: qualityMode, nozzle: nozzle))))),
         const Text('Druckoptimierung', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(
