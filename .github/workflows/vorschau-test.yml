@@ -201,10 +201,17 @@ jobs:
               final area = find.byType(ClipRRect).first;
               await tester.drag(area, const Offset(60, 0));
               await tester.pump();
+              expect(find.textContaining('Horizontal drehen:'), findsOneWidget);
               expect(find.text('Horizontal drehen: 30°'), findsNothing);
               await tester.drag(area, const Offset(0, 60));
               await tester.pump();
+              final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
+              scroll.position.jumpTo(scroll.position.maxScrollExtent);
+              await tester.pump();
+              expect(find.textContaining('Vertikal drehen:'), findsOneWidget);
               expect(find.text('Vertikal drehen: 25°'), findsNothing);
+              scroll.position.jumpTo(0);
+              await tester.pump();
               expect(find.text('Zoom: 100 %'), findsOneWidget);
               expect(tester.takeException(), isNull);
               // Disposing while rendering must not update disposed state.
@@ -244,11 +251,11 @@ jobs:
               await tester.ensureVisible(find.text('Ansicht zurücksetzen'));
               await tester.tap(find.text('Ansicht zurücksetzen'));
               await tester.pump();
+              expect(find.text('Horizontal drehen: 30°'), findsOneWidget);
+              expect(find.text('Vertikal drehen: 25°'), findsOneWidget);
               scroll.position.jumpTo(0);
               await tester.pump();
               expect(find.text('Zoom: 100 %'), findsOneWidget);
-              expect(find.text('Horizontal drehen: 30°'), findsOneWidget);
-              expect(find.text('Vertikal drehen: 25°'), findsOneWidget);
               await tester.pumpWidget(const SizedBox());
             });
           }
