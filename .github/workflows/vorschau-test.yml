@@ -207,6 +207,9 @@ jobs:
           void main() {
             testWidgets('Imports STL larger than the old 30 MB limit', (tester) async {
               await loadModel(tester, picker: _Picker(paddingBytes: 31 * 1024 * 1024));
+              final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
+              scroll.position.jumpTo(scroll.position.maxScrollExtent);
+              await tester.pump();
               expect(find.text('Dreiecke: 1'), findsOneWidget);
               expect(tester.takeException(), isNull);
               await tester.pumpWidget(const SizedBox());
