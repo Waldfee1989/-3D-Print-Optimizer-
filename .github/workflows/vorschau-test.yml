@@ -6,8 +6,10 @@ on:
     branches:
       - 3d-vorschau-test
       - larger-model-imports
+      - in-app-updates
     paths:
       - 'lib/**'
+      - 'test/**'
       - 'pubspec.yaml'
       - '.github/workflows/vorschau-test.yml'
 
@@ -302,7 +304,7 @@ jobs:
 
       - name: Oberflaechen und Touch-Gesten testen
         shell: bash
-        run: flutter test test/preview_ci --reporter expanded 2>&1 | tee preview-tests.log
+        run: flutter test test --reporter expanded 2>&1 | tee preview-tests.log
 
       - name: Fehlerdetails bereitstellen
         if: failure()

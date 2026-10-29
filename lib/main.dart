@@ -12,7 +12,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 import 'package:package_info_plus/package_info_plus.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'app_updates.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -37,42 +37,27 @@ class _HomePageState extends State<HomePage> {
   String qualityMode = 'Maximale Qualität';
   List<Map<String, dynamic>> stock = [];
   @override void initState() { super.initState(); load(); WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdates()); }
-  Future<void> checkForUpdates() async {
-    if (!Platform.isAndroid || !mounted) return;
-    HttpClient? client;
+  bool checkingForUpdate = false;
+  Future<void> checkForUpdates({bool manual = false}) async {
+    if (!Platform.isAndroid || !mounted || checkingForUpdate) return;
+    checkingForUpdate = true;
     try {
-      client = HttpClient()..connectionTimeout = const Duration(seconds: 12);
-      final request = await client.getUrl(Uri.parse(
-        'https://api.github.com/repos/Waldfee1989/-3D-Print-Optimizer-/releases/latest'));
-      request.headers.set(HttpHeaders.acceptHeader, 'application/vnd.github+json');
-      request.headers.set(HttpHeaders.userAgentHeader, '3D-Print-Optimizer');
-      final response = await request.close();
-      if (response.statusCode != 200) return;
-      final data = jsonDecode(await response.transform(utf8.decoder).join()) as Map<String, dynamic>;
-      final match = RegExp(r'(?i)build-(\d+)').firstMatch((data['tag_name'] ?? '').toString());
-      if (match == null) return;
-      final remoteBuild = int.tryParse(match.group(1)!) ?? 0;
       final installed = await PackageInfo.fromPlatform();
-      final installedBuild = int.tryParse(installed.buildNumber) ?? 0;
-      if (remoteBuild <= installedBuild || !mounted) return;
-      final assets = data['assets'] as List? ?? [];
-      final apk = assets.whereType<Map>().where((a) => a['name'] == 'app-release.apk').toList();
-      if (apk.isEmpty) return;
-      final url = Uri.tryParse((apk.first['browser_download_url'] ?? '').toString());
-      if (url == null || url.scheme != 'https') return;
-      final accept = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-        title: const Text('Update verfügbar'),
-        content: Text('Build $remoteBuild ist verfügbar. Installiert: Build $installedBuild.\n\nAPK herunterladen?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Später')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Herunterladen')),
-        ],
-      ));
-      if (accept == true) await launchUrl(url, mode: LaunchMode.externalApplication);
+      final update = await findAppUpdate(int.tryParse(installed.buildNumber) ?? 0);
+      if (!mounted) return;
+      if (update == null) {
+        if (manual) ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Du verwendest bereits die aktuelle Version.')));
+        return;
+      }
+      await showDialog<void>(context: context, barrierDismissible: false,
+        builder: (_) => AppUpdateDialog(update: update));
     } catch (_) {
-      // Die App funktioniert auch ohne Internet.
+      // Startup remains usable without a connection; manual checks explain failures.
+      if (manual && mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Updates konnten nicht geprüft werden. Bitte später erneut versuchen.')));
     } finally {
-      client?.close(force: true);
+      checkingForUpdate = false;
     }
   }
 
@@ -211,7 +196,7 @@ class _HomePageState extends State<HomePage> {
 
   @override Widget build(BuildContext context) => Scaffold(
     appBar:AppBar(title:const Text('3D Print Optimizer'),actions:[
-      IconButton(tooltip:'Updates prüfen',onPressed:checkForUpdates,icon:const Icon(Icons.system_update)),
+      IconButton(tooltip:'Updates prüfen',onPressed:() => checkForUpdates(manual: true),icon:const Icon(Icons.system_update)),
       IconButton(tooltip:'Einrichtung',onPressed:setup,icon:const Icon(Icons.settings)),
     ]),
     body:prefs==null ? const Center(child:CircularProgressIndicator()) :
