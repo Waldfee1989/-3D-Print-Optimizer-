@@ -13,6 +13,8 @@ import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'app_updates.dart';
+import 'filament_inventory.dart';
+import 'filament_scanner.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -113,51 +115,74 @@ class _HomePageState extends State<HomePage> {
       await save();
     }
   }
-  Future<void> addFilament({String barcode = ''}) async {
-    final brand = TextEditingController(), material = TextEditingController(text:'PLA');
-    final color = TextEditingController(), grams = TextEditingController(text:'1000');
-    final code = TextEditingController(text:barcode);
-    final ok = await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
-      title:const Text('Filament hinzufügen'),
-      content:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
-        for(final field in <(TextEditingController,String)>[
-          (code,'Barcode'),(brand,'Hersteller'),(material,'Material'),(color,'Farbe'),(grams,'Restmenge (g)')
-        ]) TextField(controller:field.$1,decoration:InputDecoration(labelText:field.$2),
-          keyboardType: field.$2.startsWith('Restmenge') ? TextInputType.number : TextInputType.text),
-      ])),
-      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Abbrechen')),
-        FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Hinzufügen'))],
-    ));
-    if(ok==true) {
-      setState(()=>stock.add({'barcode':code.text.trim(),'brand':brand.text.trim(),
-        'material':material.text.trim(),'color':color.text.trim(),
-        'grams':double.tryParse(grams.text.replaceAll(',','.'))??0}));
-      await save();
+  Future<void> addFilament({String barcode = '', int? index}) async {
+    final p = prefs;
+    if (p == null) return;
+    final catalog = FilamentCatalog(p);
+    final item = await showDialog<Map<String, dynamic>>(context: context,
+      builder: (_) => FilamentEditor(barcode: barcode,
+        profile: catalog.lookup(barcode, stock),
+        existing: index == null ? null : stock[index]));
+    if (item == null || !mounted) return;
+    final next = [...stock];
+    if (index == null) { next.add(item); } else { next[index] = item; }
+    try {
+      if (!await p.setString('stock', jsonEncode(next))) {
+        throw const FormatException('Filamentlager konnte nicht gespeichert werden.');
+      }
+      if (mounted) setState(() => stock = next);
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Die Rolle konnte nicht gespeichert werden. Bitte erneut versuchen.')));
+      return;
     }
-    for(final c in [brand,material,color,grams,code]) { c.dispose(); }
+    try { await catalog.remember(item); }
+    catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Rolle gespeichert. Die zusätzliche Barcode-Zuordnung konnte nicht gespeichert werden.')));
+    }
   }
-  Future<void> enterCode() async {
-    final code = TextEditingController();
-    final value = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('Filamentcode eingeben'),
-      content: TextField(controller: code, autofocus: true,
-        decoration: const InputDecoration(labelText: 'Code auf der Rolle'),
-        onSubmitted: (v) => Navigator.pop(ctx, v.trim())),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, code.text.trim()), child: const Text('Suchen')),
-      ],
-    ));
-    code.dispose();
-    if (!mounted || value == null || value.isEmpty) return;
-    final found = stock.where((e) => (e['barcode'] ?? '').toString().toLowerCase() == value.toLowerCase()).toList();
-    if (found.isNotEmpty) {
-      final item = found.first;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(
-        'Bekannt: ${item['brand']} ${item['material']} ${item['color']} – ${item['grams']} g')));
+
+  Future<void> handleFilamentCode(String value) async {
+    final code = filamentCode(value);
+    if (!mounted || code.isEmpty) return;
+    final matches = [for (var i = 0; i < stock.length; i++)
+      if (filamentCode('${stock[i]['barcode'] ?? ''}') == code) i];
+    if (matches.isNotEmpty) {
+      final choice = await showDialog<int>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('Barcode bereits im Lager'),
+        content: SizedBox(width: double.maxFinite, child: ListView(shrinkWrap: true, children: [
+          const Text('Vorhandene Rolle bearbeiten oder eine weitere Rolle hinzufügen?'),
+          for (final i in matches) ListTile(
+            title: Text('Rolle ${i + 1}: ${stock[i]['brand']} ${stock[i]['material']} ${stock[i]['color']}'),
+            subtitle: Text('${stock[i]['grams']} g Restmenge'),
+            onTap: () => Navigator.pop(ctx, i)),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, -1), child: const Text('Neue Rolle')),
+        ],
+      ));
+      if (choice == null || !mounted) return;
+      await addFilament(barcode: code, index: choice < 0 ? null : choice);
     } else {
-      await addFilament(barcode: value);
+      await addFilament(barcode: code);
     }
+  }
+
+  Future<void> scanFilament() async {
+    final value = await Navigator.push<String>(context,
+      MaterialPageRoute(builder: (_) => const FilamentScannerPage()));
+    if (!mounted || value == null) return;
+    if (value.isEmpty) { await enterCode(); }
+    else { await handleFilamentCode(value); }
+  }
+
+  Future<void> enterCode() async {
+    final value = await showDialog<String>(context: context,
+      builder: (_) => const FilamentCodeDialog());
+    if (!mounted || value == null) return;
+    await handleFilamentCode(value);
   }
 
   Map<String, String> get profile {
@@ -243,16 +268,22 @@ class _HomePageState extends State<HomePage> {
         const Text('Mein Filamentlager',style:TextStyle(fontSize:22,fontWeight:FontWeight.bold)),
         const SizedBox(height:8),
         Wrap(spacing:8,children:[
-          FilledButton.icon(onPressed:enterCode,icon:const Icon(Icons.keyboard),label:const Text('Filamentcode eingeben')),
+          FilledButton.icon(onPressed:scanFilament,icon:const Icon(Icons.qr_code_scanner),label:const Text('Barcode scannen')),
+          OutlinedButton.icon(onPressed:enterCode,icon:const Icon(Icons.keyboard),label:const Text('Filamentcode eingeben')),
           OutlinedButton.icon(onPressed:()=>addFilament(),icon:const Icon(Icons.add),label:const Text('Manuell hinzufügen')),
         ]),
         for(var i=0;i<stock.length;i++)
           Card(child:ListTile(
             title:Text('${stock[i]['brand']} ${stock[i]['material']} ${stock[i]['color']}'),
             subtitle:Text('${stock[i]['grams']} g · Barcode: ${stock[i]['barcode']}'),
-            trailing:IconButton(icon:const Icon(Icons.delete_outline),onPressed:()async{
-              setState(()=>stock.removeAt(i)); await save();
-            }),
+            onTap: () => addFilament(index: i),
+            trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+              IconButton(tooltip: 'Restmenge bearbeiten', icon: const Icon(Icons.edit),
+                onPressed: () => addFilament(index: i)),
+              IconButton(tooltip: 'Rolle löschen', icon:const Icon(Icons.delete_outline),onPressed:()async{
+                setState(()=>stock.removeAt(i)); await save();
+              }),
+            ]),
           )),
         if(stock.isEmpty) const Padding(padding:EdgeInsets.all(16),
           child:Text('Noch keine Filamentrollen vorhanden.')),
