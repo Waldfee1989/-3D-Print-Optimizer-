@@ -179,18 +179,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> enterCode() async {
-    final code = TextEditingController();
-    final value = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('Filamentcode eingeben'),
-      content: TextField(controller: code, autofocus: true, maxLength: 512,
-        decoration: const InputDecoration(labelText: 'Code auf der Rolle'),
-        onSubmitted: (v) => Navigator.pop(ctx, v.trim())),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
-        FilledButton(onPressed: () => Navigator.pop(ctx, code.text.trim()), child: const Text('Suchen')),
-      ],
-    ));
-    code.dispose();
+    final value = await showDialog<String>(context: context,
+      builder: (_) => const FilamentCodeDialog());
     if (!mounted || value == null) return;
     await handleFilamentCode(value);
   }

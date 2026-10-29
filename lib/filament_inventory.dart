@@ -47,6 +47,26 @@ class FilamentEditor extends StatefulWidget {
   @override State<FilamentEditor> createState() => _FilamentEditorState();
 }
 
+class FilamentCodeDialog extends StatefulWidget {
+  const FilamentCodeDialog({super.key});
+  @override State<FilamentCodeDialog> createState() => _FilamentCodeDialogState();
+}
+
+class _FilamentCodeDialogState extends State<FilamentCodeDialog> {
+  final code = TextEditingController();
+  @override void dispose() { code.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Filamentcode eingeben'),
+    content: TextField(controller: code, autofocus: true, maxLength: 512,
+      decoration: const InputDecoration(labelText: 'Code auf der Rolle'),
+      onSubmitted: (value) => Navigator.pop(context, value.trim())),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Abbrechen')),
+      FilledButton(onPressed: () => Navigator.pop(context, code.text.trim()), child: const Text('Suchen')),
+    ],
+  );
+}
+
 class _FilamentEditorState extends State<FilamentEditor> {
   final form = GlobalKey<FormState>();
   late final code = TextEditingController(text: '${widget.existing?['barcode'] ?? widget.barcode}');
