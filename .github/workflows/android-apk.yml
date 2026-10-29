@@ -8,6 +8,7 @@ on:
       - main
       - in-app-updates
       - filament-scan
+      - material-advice
 
 permissions:
   contents: write

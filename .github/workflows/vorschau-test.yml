@@ -8,6 +8,7 @@ on:
       - larger-model-imports
       - in-app-updates
       - filament-scan
+      - material-advice
     paths:
       - 'lib/**'
       - 'test/**'
