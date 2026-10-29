@@ -1,0 +1,7 @@
+# Private Android signing material (stored only as Actions secrets)
+*.p12
+*.jks
+*.keystore
+android/key.properties
+GitHub_ANDROID_SIGNING_CONFIG*
+__pycache__/
