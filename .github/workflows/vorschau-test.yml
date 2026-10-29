@@ -42,10 +42,10 @@ jobs:
           mkdir -p test/preview_ci
           cat > test/preview_ci/mesh_renderer_test.dart <<'DART'
           import 'dart:typed_data';
-          
+
           import 'package:flutter_test/flutter_test.dart';
           import 'package:print_optimizer/mesh_renderer.dart';
-          
+
           Uint8List render(List<double> vertices, {double zoom = 1, double angleY = 0}) =>
               renderMesh(
                 MeshRenderRequest(
@@ -57,20 +57,20 @@ jobs:
                   zoom,
                 ),
               );
-          
+
           List<int> pixel(Uint8List image, int x, int y) =>
               image.sublist((y * 100 + x) * 4, (y * 100 + x + 1) * 4);
-          
+
           void main() {
             const a = [-.8, -.8, -.4, .8, -.8, .4, 0.0, .8, 0.0];
             const b = [-.8, -.8, .4, .8, -.8, -.4, 0.0, .8, 0.0];
-          
+
             test('Filled interiors and transparent background', () {
               final image = render(a);
               expect(pixel(image, 50, 50)[3], 255);
               expect(pixel(image, 0, 0)[3], 0);
             });
-          
+
             test(
               'Intersecting faces use per-pixel depth independently of file order',
               () {
@@ -81,7 +81,7 @@ jobs:
                 expect(pixel(render(a), 40, 60), isNot(pixel(render(b), 40, 60)));
               },
             );
-          
+
             test('Adjacent faces cover a square without seams', () {
               final image = render([
                 -.8,
@@ -109,7 +109,7 @@ jobs:
                 }
               }
             });
-          
+
             test('Reverse winding remains visible', () {
               expect(
                 render(a),
@@ -118,7 +118,7 @@ jobs:
                 ),
               );
             });
-          
+
             test('Zoom increases coverage and rotation changes the image', () {
               int covered(Uint8List image) {
                 var count = 0;
@@ -127,17 +127,17 @@ jobs:
                 }
                 return count;
               }
-          
+
               expect(covered(render(a, zoom: 2)), greaterThan(covered(render(a))));
               expect(render(a, angleY: 45), isNot(orderedEquals(render(a))));
               expect(render(a, zoom: 5).length, 100 * 100 * 4);
             });
-          
+
             test('Degenerate and offscreen faces are safe', () {
               expect(render(List.filled(9, 0)), everyElement(0));
               expect(render([10, 10, 0, 11, 10, 0, 10, 11, 0]), everyElement(0));
             });
-          
+
             test('Faces beyond the old 3500 limit are rendered', () {
               final image = render([
                 for (var i = 0; i < 4000; i++) ...List<double>.filled(9, 0),
@@ -149,12 +149,12 @@ jobs:
           DART
           cat > test/preview_ci/model_preview_test.dart <<'DART'
           import 'dart:convert';
-          
+
           import 'package:file_picker/file_picker.dart';
           import 'package:flutter/material.dart';
           import 'package:flutter_test/flutter_test.dart';
           import 'package:print_optimizer/main.dart';
-          
+
           class _Picker extends FilePicker {
             @override
             Future<FilePickerResult?> pickFiles({
@@ -182,7 +182,7 @@ jobs:
               ]);
             }
           }
-          
+
           Future<void> loadModel(WidgetTester tester) async {
             FilePicker.platform = _Picker();
             await tester.pumpWidget(const MaterialApp(home: ModelPreviewPage()));
@@ -191,7 +191,7 @@ jobs:
             await tester.pump();
             expect(find.text('test.stl'), findsOneWidget);
           }
-          
+
           void main() {
             testWidgets('One finger rotates horizontally and vertically inside the list', (
               tester,
@@ -221,7 +221,7 @@ jobs:
               });
               expect(tester.takeException(), isNull);
             });
-          
+
             testWidgets('Two fingers zoom; reset restores zoom and both angles', (
               tester,
             ) async {
