@@ -173,7 +173,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with WidgetsBindingOb
   late final UpdateInstaller installer = widget.installer ?? UpdateInstaller();
   File? downloaded;
   double progress = 0;
-  bool busy = true, permissionNeeded = false, awaitingPermission = false;
+  bool busy = true, permissionNeeded = false, awaitingPermission = false, closing = false;
   String message = 'Update wird heruntergeladen …';
 
   @override void initState() {
@@ -188,7 +188,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with WidgetsBindingOb
     super.dispose();
   }
   @override void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed && awaitingPermission) {
+    if (state == AppLifecycleState.resumed && awaitingPermission && !closing) {
       awaitingPermission = false;
       openInstaller();
     }
@@ -197,21 +197,22 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with WidgetsBindingOb
   Future<void> start() async {
     try {
       final directory = await installer.directory();
-      if (!mounted) return;
+      if (!mounted || closing) return;
       // Keep only this release's APK; interrupted downloads are never installed.
       await for (final entity in directory.list()) {
+        if (closing) return;
         if (entity is File && RegExp(r'^update-\d+\.apk(?:\.part)?$')
             .hasMatch(entity.uri.pathSegments.last)) {
           await entity.delete();
         }
       }
       downloaded = await downloader.download(widget.update, directory, (value) {
-        if (mounted) setState(() => progress = value);
+        if (mounted && !closing) setState(() => progress = value);
       });
-      if (!mounted) return;
+      if (!mounted || closing) return;
       await openInstaller();
     } catch (_) {
-      if (mounted) setState(() {
+      if (mounted && !closing) setState(() {
         busy = false;
         message = 'Das Update konnte nicht geladen oder geprüft werden. '
             'Bitte später über „Updates prüfen“ erneut versuchen.';
@@ -221,11 +222,11 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with WidgetsBindingOb
 
   Future<void> openInstaller() async {
     final file = downloaded;
-    if (file == null || !mounted) return;
+    if (file == null || !mounted || closing) return;
     setState(() { busy = true; permissionNeeded = false; message = 'Update wird geprüft …'; });
     try {
       final result = await installer.install(file, widget.update.digest);
-      if (!mounted) return;
+      if (!mounted || closing) return;
       if (result == 'permissionRequired') {
         setState(() {
           busy = false;
@@ -241,7 +242,7 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with WidgetsBindingOb
         throw const FormatException('Installationsdialog nicht geöffnet.');
       }
     } catch (_) {
-      if (mounted) setState(() {
+      if (mounted && !closing) setState(() {
         busy = false;
         message = 'Die Installation konnte nicht geöffnet werden. '
             'Bitte erneut versuchen. Die bisherige App bleibt erhalten.';
@@ -275,6 +276,8 @@ class _AppUpdateDialogState extends State<AppUpdateDialog> with WidgetsBindingOb
         ]),
       actions: [
         TextButton(onPressed: () {
+          closing = true;
+          awaitingPermission = false;
           downloader.cancel();
           installer.cancel();
           Navigator.pop(context);

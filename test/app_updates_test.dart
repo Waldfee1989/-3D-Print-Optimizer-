@@ -154,10 +154,11 @@ void main() {
     final downloader = FakeDownloader(File('${root.path}/update-40.apk'), pending: pending);
     await openDialog(tester, installer, downloader);
     await tester.tap(find.text('Abbrechen'));
-    await tester.pumpAndSettle();
     expect(downloader.cancelled, isTrue);
+    // Complete while the route is still mounted during its closing animation.
     pending.complete(downloader.file);
     await tester.pump();
+    await tester.pumpAndSettle();
     expect(installer.installs, 0);
     expect(find.byType(AppUpdateDialog), findsNothing);
   });
