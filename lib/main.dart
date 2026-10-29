@@ -1,8 +1,13 @@
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'mesh_renderer.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:archive/archive.dart';
 import 'package:xml/xml.dart';
@@ -286,10 +291,30 @@ class _Triangle {
 }
 
 class _Mesh {
-  const _Mesh(this.faces, this.minimum, this.maximum, this.totalFaces);
+  _Mesh(this.faces, this.minimum, this.maximum, this.totalFaces);
   final List<_Triangle> faces;
   final _V3 minimum, maximum;
   final int totalFaces;
+  late final Float32List renderVertices = _normalizedVertices();
+
+  Float32List _normalizedVertices() {
+    final center = _V3(minimum.x / 2 + maximum.x / 2,
+        minimum.y / 2 + maximum.y / 2, minimum.z / 2 + maximum.z / 2);
+    final extent = size;
+    final radius = math.max(.001, math.sqrt(extent.x * extent.x +
+        extent.y * extent.y + extent.z * extent.z) / 2);
+    final result = Float32List(faces.length * 9);
+    var index = 0;
+    for (final face in faces) {
+      for (final vertex in [face.a, face.b, face.c]) {
+        result[index++] = (vertex.x - center.x) / radius;
+        result[index++] = (vertex.y - center.y) / radius;
+        result[index++] = (vertex.z - center.z) / radius;
+      }
+    }
+    return result;
+  }
+
   _V3 get size => _V3(maximum.x - minimum.x,
       maximum.y - minimum.y, maximum.z - minimum.z);
 }
@@ -387,13 +412,8 @@ class _MeshReader {
         minZ = math.min(minZ, v.z); maxZ = math.max(maxZ, v.z);
       }
     }
-    // Für die Darstellung begrenzen, die Abmessungen aber aus allen
-    // Dreiecken berechnen. So bleiben auch große Dateien bedienbar.
-    const limit = 3500;
-    final step = math.max(1, (all.length / limit).ceil());
-    return _Mesh([
-      for (var i = 0; i < all.length; i += step) all[i]
-    ], _V3(minX, minY, minZ), _V3(maxX, maxY, maxZ), all.length);
+    return _Mesh(all, _V3(minX, minY, minZ),
+        _V3(maxX, maxY, maxZ), all.length);
   }
 }
 
@@ -406,7 +426,44 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
   _Mesh? mesh;
   String? fileName, error;
   bool loading = false;
-  double angleX = 25, angleY = 30;
+  double angleX = 25, angleY = 30, zoom = 1;
+  final Map<int, Offset> _touches = {};
+  double _gestureZoom = 1, _gestureSpan = 0;
+
+  double _wrapAngle(double value) => (value + 180) % 360 - 180;
+
+  double get _touchSpan {
+    if (_touches.length < 2) return 0;
+    final points = _touches.values.take(2).toList();
+    return (points[0] - points[1]).distance;
+  }
+
+  void _startTouch(PointerDownEvent event) {
+    _touches[event.pointer] = event.localPosition;
+    _gestureZoom = zoom;
+    _gestureSpan = _touchSpan;
+  }
+
+  void _moveTouch(PointerMoveEvent event) {
+    final previous = _touches[event.pointer];
+    if (previous == null) return;
+    _touches[event.pointer] = event.localPosition;
+    setState(() {
+      if (_touches.length == 1) {
+        final delta = event.localPosition - previous;
+        angleY = _wrapAngle(angleY + delta.dx * .5);
+        angleX = _wrapAngle(angleX + delta.dy * .5);
+      } else if (_gestureSpan > 0) {
+        zoom = (_gestureZoom * _touchSpan / _gestureSpan).clamp(.25, 5.0).toDouble();
+      }
+    });
+  }
+
+  void _endTouch(PointerEvent event) {
+    _touches.remove(event.pointer);
+    _gestureZoom = zoom;
+    _gestureSpan = _touchSpan;
+  }
 
   Future<void> openModel() async {
     setState(() { loading = true; error = null; });
@@ -426,7 +483,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
       }
       final parsed = _MeshReader.fromBytes(file.name, bytes);
       if (!mounted) return;
-      setState(() { mesh = parsed; fileName = file.name; angleX = 25; angleY = 30; });
+      setState(() { mesh = parsed; fileName = file.name; angleX = 25; angleY = 30; zoom = 1; });
     } catch (e) {
       if (mounted) setState(() => error = 'Datei konnte nicht geöffnet werden: $e');
     } finally {
@@ -452,8 +509,33 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
             color: Theme.of(context).colorScheme.surfaceContainerHighest,
             borderRadius: BorderRadius.circular(12)),
             child: ClipRRect(borderRadius: BorderRadius.circular(12),
-              child: CustomPaint(painter: _MeshPainter(m, angleX, angleY),
-                child: const SizedBox.expand()))),
+              child: RawGestureDetector(
+                // Claim touches inside the preview so vertical rotation does
+                // not become a ListView scroll. Scrolling outside still works.
+                gestures: {
+                  EagerGestureRecognizer:
+                    GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+                      () => EagerGestureRecognizer(), (_) {}),
+                },
+                child: Listener(
+                  behavior: HitTestBehavior.opaque,
+                  onPointerDown: _startTouch,
+                  onPointerMove: _moveTouch,
+                  onPointerUp: _endTouch,
+                  onPointerCancel: _endTouch,
+                child: LayoutBuilder(builder: (context, constraints) {
+                  // Bound raster work while retaining the viewport aspect ratio.
+                  final factor = math.min(1.0, 480 / math.max(
+                      constraints.maxWidth, constraints.maxHeight));
+                  return _SurfacePreview(mesh: m, angleX: angleX, angleY: angleY,
+                    zoom: zoom, width: math.max(1, (constraints.maxWidth * factor).round()),
+                    height: math.max(1, (constraints.maxHeight * factor).round()));
+                }))))),
+          const SizedBox(height: 8),
+          const Text('Mit einem Finger drehen · Mit zwei Fingern zoomen'),
+          Text('Zoom: ${(zoom * 100).round()} %'),
+          Slider(value: zoom, min: .25, max: 5,
+            onChanged: (v) => setState(() => zoom = v)),
           const SizedBox(height: 12),
           Text('Horizontal drehen: ${angleY.round()}°'),
           Slider(value: angleY, min: -180, max: 180,
@@ -461,7 +543,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           Text('Vertikal drehen: ${angleX.round()}°'),
           Slider(value: angleX, min: -180, max: 180,
             onChanged: (v) => setState(() => angleX = v)),
-          OutlinedButton(onPressed: () => setState(() { angleX = 25; angleY = 30; }),
+          OutlinedButton(onPressed: () => setState(() { angleX = 25; angleY = 30; zoom = 1; }),
             child: const Text('Ansicht zurücksetzen')),
           const SizedBox(height: 8),
           Text('Abmessungen (Modellkoordinaten, normalerweise mm): '
@@ -485,49 +567,80 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
   }
 }
 
-class _MeshPainter extends CustomPainter {
-  _MeshPainter(this.mesh, this.degX, this.degY);
+class _SurfacePreview extends StatefulWidget {
+  const _SurfacePreview({required this.mesh, required this.angleX,
+    required this.angleY, required this.zoom, required this.width, required this.height});
   final _Mesh mesh;
-  final double degX, degY;
+  final double angleX, angleY, zoom;
+  final int width, height;
 
-  @override void paint(Canvas canvas, Size size) {
-    final center = _V3((mesh.minimum.x + mesh.maximum.x) / 2,
-      (mesh.minimum.y + mesh.maximum.y) / 2,
-      (mesh.minimum.z + mesh.maximum.z) / 2);
-    final x = degX * math.pi / 180, y = degY * math.pi / 180;
-    final sx = math.sin(x), cx = math.cos(x), sy = math.sin(y), cy = math.cos(y);
-    math.Point<double> project(_V3 v) {
-      final a = v.x - center.x, b = v.y - center.y, c = v.z - center.z;
-      final rx = cy * a + sy * c;
-      final rz = -sy * a + cy * c;
-      final ry = cx * b - sx * rz;
-      return math.Point(rx, ry);
-    }
-    final corners = <_V3>[
-      for (final a in [mesh.minimum.x, mesh.maximum.x])
-        for (final b in [mesh.minimum.y, mesh.maximum.y])
-          for (final c in [mesh.minimum.z, mesh.maximum.z]) _V3(a, b, c)
-    ].map(project).toList();
-    final xs = corners.map((p) => p.x), ys = corners.map((p) => p.y);
-    final spanX = xs.reduce(math.max) - xs.reduce(math.min);
-    final spanY = ys.reduce(math.max) - ys.reduce(math.min);
-    final scale = math.min(size.width * .85 / math.max(spanX, .001),
-        size.height * .85 / math.max(spanY, .001));
-    final pen = Paint()..color = const Color(0xFF82B8F7).withValues(alpha: .52)
-      ..strokeWidth = .65 ..style = PaintingStyle.stroke;
-    Offset offset(_V3 v) {
-      final p = project(v);
-      return Offset(size.width / 2 + p.x * scale,
-        size.height / 2 - p.y * scale);
-    }
-    for (final face in mesh.faces) {
-      final path = Path()..moveTo(offset(face.a).dx, offset(face.a).dy)
-        ..lineTo(offset(face.b).dx, offset(face.b).dy)
-        ..lineTo(offset(face.c).dx, offset(face.c).dy)..close();
-      canvas.drawPath(path, pen);
+  @override State<_SurfacePreview> createState() => _SurfacePreviewState();
+}
+
+class _SurfacePreviewState extends State<_SurfacePreview> {
+  ui.Image? _image;
+  String? _error;
+  int _revision = 0;
+  bool _rendering = false;
+
+  @override void initState() { super.initState(); _requestRender(); }
+
+  @override void didUpdateWidget(covariant _SurfacePreview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.mesh != widget.mesh || oldWidget.angleX != widget.angleX ||
+        oldWidget.angleY != widget.angleY || oldWidget.zoom != widget.zoom ||
+        oldWidget.width != widget.width || oldWidget.height != widget.height) {
+      _requestRender();
     }
   }
 
-  @override bool shouldRepaint(covariant _MeshPainter oldDelegate) =>
-    oldDelegate.mesh != mesh || oldDelegate.degX != degX || oldDelegate.degY != degY;
+  void _requestRender() {
+    _revision++;
+    if (!_rendering) unawaited(_render());
+  }
+
+  Future<void> _render() async {
+    _rendering = true;
+    try {
+      while (mounted) {
+        final revision = _revision;
+        final mesh = widget.mesh;
+        final request = MeshRenderRequest(widget.mesh.renderVertices,
+            widget.width, widget.height, widget.angleX, widget.angleY, widget.zoom);
+        final pixels = await compute(renderMesh, request);
+        if (!mounted) return;
+        if (mesh != widget.mesh) continue;
+        final completer = Completer<ui.Image>();
+        ui.decodeImageFromPixels(pixels, request.width, request.height,
+            ui.PixelFormat.rgba8888, completer.complete);
+        final image = await completer.future;
+        if (!mounted || mesh != widget.mesh) {
+          image.dispose();
+          if (!mounted) return;
+          continue;
+        }
+        final previous = _image;
+        setState(() { _image = image; _error = null; });
+        if (previous != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
+        }
+        if (revision == _revision) break;
+      }
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Vorschau konnte nicht berechnet werden.');
+    } finally {
+      _rendering = false;
+    }
+  }
+
+  @override void dispose() { _image?.dispose(); super.dispose(); }
+
+  @override Widget build(BuildContext context) => RepaintBoundary(
+    child: Stack(fit: StackFit.expand, children: [
+      if (_image != null) RawImage(image: _image, fit: BoxFit.fill,
+        filterQuality: FilterQuality.medium),
+      if (_image == null && _error == null)
+        const Center(child: CircularProgressIndicator()),
+      if (_error != null) Center(child: Text(_error!)),
+    ]));
 }
