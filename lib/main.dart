@@ -320,6 +320,13 @@ class _Mesh {
 }
 
 class _MeshReader {
+  static _Mesh inBackground((String, Uint8List) input) {
+    final parsed = fromBytes(input.$1, input.$2);
+    // Prepare the render buffer on the worker too, before returning to the UI.
+    parsed.renderVertices;
+    return parsed;
+  }
+
   static _Mesh fromBytes(String name, Uint8List bytes) {
     if (name.toLowerCase().endsWith('.3mf')) return _from3mf(bytes);
     return _fromStl(bytes);
@@ -470,18 +477,24 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom, allowedExtensions: ['stl', '3mf'],
-        withData: true,
+        withData: false,
       );
       if (result == null) return;
       final file = result.files.single;
+      const maximumBytes = 100 * 1024 * 1024;
+      // Check metadata before loading the entire file into memory.
+      if (file.size > maximumBytes || (file.path != null &&
+          await File(file.path!).length() > maximumBytes)) {
+        throw const FormatException('Datei ist größer als 100 MB.');
+      }
       final bytes = file.bytes ?? (file.path == null ? null :
           await File(file.path!).readAsBytes());
       if (bytes == null) throw const FormatException('Datei konnte nicht gelesen werden.');
       // Schutz vor sehr grossen Dateien auf Mobilgeraeten.
-      if (bytes.length > 30 * 1024 * 1024) {
-        throw const FormatException('Datei ist größer als 30 MB.');
+      if (bytes.length > maximumBytes) {
+        throw const FormatException('Datei ist größer als 100 MB.');
       }
-      final parsed = _MeshReader.fromBytes(file.name, bytes);
+      final parsed = await compute(_MeshReader.inBackground, (file.name, bytes));
       if (!mounted) return;
       setState(() { mesh = parsed; fileName = file.name; angleX = 25; angleY = 30; zoom = 1; });
     } catch (e) {
