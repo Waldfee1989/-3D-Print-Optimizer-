@@ -47,13 +47,13 @@ void main() {
     await tester.tap(find.text('Speichern'));
     await tester.pumpAndSettle();
     expect(find.text('Deine Druckempfehlung'), findsOneWidget);
-    await tester.scrollUntilVisible(find.text('Empfohlenes Material: PETG'), -200);
-    expect(find.text('Empfohlenes Material: PETG'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Filament: PETG'), -200);
+    expect(find.text('Filament: PETG'), findsOneWidget);
     await tester.pumpWidget(const MaterialApp(home: PrintProjectsPage()));
     await tester.pumpAndSettle();
     await tester.tap(find.text('teil.stl'));
     await tester.pumpAndSettle();
-    expect(find.text('Empfohlenes Material: PETG'), findsOneWidget);
+    expect(find.text('Filament: PETG'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('Antworten ändern'), 300);
     await tester.tap(find.text('Antworten ändern'));
     await tester.pumpAndSettle();
@@ -78,6 +78,6 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body:
       SingleChildScrollView(child: ProjectRecommendation(project: sample('one', nozzle: '0.6'))))));
     expect(find.textContaining('Schichthöhe:'), findsNothing);
-    expect(find.textContaining('Für diese Düsengröße'), findsOneWidget);
+    expect(find.textContaining('Weitere Werte: passendes Düsenprofil'), findsOneWidget);
   });
 }

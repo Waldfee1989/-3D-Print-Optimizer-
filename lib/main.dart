@@ -9,14 +9,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'mesh_renderer.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:archive/archive.dart';
-import 'package:xml/xml.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'app_updates.dart';
 import 'filament_inventory.dart';
 import 'filament_scanner.dart';
 import 'project_optimizer.dart';
 import 'support_analysis.dart';
+import 'model_3mf.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -26,7 +25,19 @@ class OptimizerApp extends StatelessWidget {
   const OptimizerApp({super.key});
   @override Widget build(BuildContext context) => MaterialApp(
     title: '3D Print Optimizer',
-    theme: ThemeData(colorSchemeSeed: Colors.blue, brightness: Brightness.dark, useMaterial3: true),
+    theme: ThemeData(
+      useMaterial3: true, brightness: Brightness.dark,
+      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff6ee7d8), brightness: Brightness.dark,
+        primary: const Color(0xff6ee7d8), secondary: const Color(0xffb8a6ff), surface: const Color(0xff111b2b)),
+      scaffoldBackgroundColor: const Color(0xff0a1220),
+      appBarTheme: const AppBarTheme(backgroundColor: Color(0xff0a1220), centerTitle: false),
+      cardTheme: CardThemeData(elevation: 0, margin: const EdgeInsets.symmetric(vertical: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22))),
+      inputDecorationTheme: InputDecorationTheme(filled: true,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none)),
+      filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
+        minimumSize: const Size(48, 52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)))),
+    ),
     home: const HomePage(),
   );
 }
@@ -38,6 +49,7 @@ class _HomePageState extends State<HomePage> {
   SharedPreferences? prefs;
   String printer = 'Anycubic Kobra S1', slicer = 'Anycubic Slicer Next', nozzle = '0.4';
   bool configured = false;
+  bool inventoryOpen = false;
   String qualityMode = 'Maximale Qualität';
   List<Map<String, dynamic>> stock = [];
   @override void initState() { super.initState(); load(); WidgetsBinding.instance.addPostFrameCallback((_) => checkForUpdates()); }
@@ -176,6 +188,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> scanFilament() async {
+    if (Platform.isWindows || Platform.isLinux) { await enterCode(); return; }
     final value = await Navigator.push<String>(context,
       MaterialPageRoute(builder: (_) => const FilamentScannerPage()));
     if (!mounted || value == null) return;
@@ -190,124 +203,107 @@ class _HomePageState extends State<HomePage> {
     await handleFilamentCode(value);
   }
 
-  Map<String, String> get profile {
-    switch (qualityMode) {
-      case 'Ausgewogen':
-        return {'Schichthöhe': '0,16 mm', 'Außenwand': '50 mm/s',
-          'Wände': '3', 'Infill': '15 %', 'Oberfläche': 'Standard'};
-      case 'Schneller Druck':
-        return {'Schichthöhe': '0,24 mm', 'Außenwand': '80 mm/s',
-          'Wände': '2', 'Infill': '12 %', 'Oberfläche': 'Geschwindigkeit'};
-      default:
-        return {'Schichthöhe': '0,12 mm', 'Außenwand': '35 mm/s',
-          'Wände': '3', 'Infill': '15 %', 'Oberfläche': 'Feine Details'};
-    }
-  }
+  void openModel() => Navigator.push(context, MaterialPageRoute(builder: (_) =>
+    ModelPreviewPage(printer: printer, slicer: slicer, nozzle: nozzle, quality: qualityMode)));
 
-  Future<void> showProfile() async {
-    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
-      title: Text('PLA · $qualityMode'),
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('$printer · $slicer · Düse $nozzle mm'),
-          const SizedBox(height: 12),
-          for (final entry in profile.entries) Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text('${entry.key}: ${entry.value}')),
-          const SizedBox(height: 12),
-          const Text('Startwerte für PLA mit 0,4-mm-Düse. Temperatur, Kühlung, '
-            'Haftung und Beschleunigung müssen mit Filament- und Druckerprofil '
-            'abgeglichen werden. Noch keine STL-/3MF-Modellanalyse oder '
-            'Slicer-Übertragung.'),
-        ])),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Schließen'))],
-    ));
-  }
+  Widget actionCard({required String title, required String subtitle,
+    required IconData icon, required Color color, required VoidCallback onTap}) =>
+    Card(child: ListTile(contentPadding: const EdgeInsets.all(16),
+      leading: Container(padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: color.withValues(alpha: .12), borderRadius: BorderRadius.circular(16)),
+        child: Icon(icon, color: color, size: 28)),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+      subtitle: Text(subtitle), trailing: const Icon(Icons.chevron_right), onTap: onTap));
 
-  @override Widget build(BuildContext context) => Scaffold(
-    appBar:AppBar(title:const Text('3D Print Optimizer'),actions:[
-      IconButton(tooltip:'Updates prüfen',onPressed:() => checkForUpdates(manual: true),icon:const Icon(Icons.system_update)),
-      IconButton(tooltip:'Einrichtung',onPressed:setup,icon:const Icon(Icons.settings)),
-    ]),
-    body:prefs==null ? const Center(child:CircularProgressIndicator()) :
-      ListView(padding:const EdgeInsets.all(16),children:[
-        if(!configured) Card(child:ListTile(
-          title:const Text('Einrichtung starten'),
-          subtitle:const Text('Drucker und Slicer einmal festlegen'),
-          trailing:const Icon(Icons.arrow_forward),onTap:setup)),
-        Card(child:ListTile(title:Text(printer),
-          subtitle:Text('$slicer · Düse $nozzle mm'),leading:const Icon(Icons.print))),
-        const SizedBox(height: 12),
-        Card(child: ListTile(leading: const Icon(Icons.folder_open),
-          title: const Text('Datei laden und Druck optimieren'),
-          subtitle: const Text('STL / 3MF öffnen → Fragen beantworten → Empfehlung'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
-            ModelPreviewPage(printer: printer, slicer: slicer, nozzle: nozzle, quality: qualityMode))))),
-        Card(child: ListTile(leading: const Icon(Icons.folder_copy_outlined),
-          title: const Text('Meine Druckprojekte'),
-          subtitle: const Text('Gespeicherte Antworten und Einstellungen'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrintProjectsPage())))),
-        const Text('Druckoptimierung', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        const SizedBox(height: 8),
-        Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start, children: [
-            DropdownButtonFormField<String>(
-              value: qualityMode,
-              decoration: const InputDecoration(labelText: 'Druckmodus'),
-              items: ['Maximale Qualität', 'Ausgewogen', 'Schneller Druck']
-                .map((mode) => DropdownMenuItem(value: mode, child: Text(mode))).toList(),
-              onChanged: (value) async {
-                if (value == null) return;
-                setState(() => qualityMode = value);
-                await save();
-              },
-            ),
-            const SizedBox(height: 8),
-            Text('PLA · Schichthöhe ${profile['Schichthöhe']} · Außenwand ${profile['Außenwand']}'),
-            const SizedBox(height: 8),
-            FilledButton.icon(onPressed: showProfile,
-              icon: const Icon(Icons.tune), label: const Text('Einstellungen anzeigen')),
-          ],
-        ))),
-        const SizedBox(height: 12),
-        Card(child: ListTile(
-          leading: const Icon(Icons.view_in_ar),
-          title: const Text('STL / 3MF öffnen'),
-          subtitle: const Text('Modell ansehen und anschließend Druckteil festlegen'),
-          trailing: const Icon(Icons.chevron_right),
-          onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => ModelPreviewPage(printer: printer, slicer: slicer, nozzle: nozzle, quality: qualityMode))),
-        )),
-        const SizedBox(height:12),
-        const Text('Mein Filamentlager',style:TextStyle(fontSize:22,fontWeight:FontWeight.bold)),
-        const SizedBox(height:8),
-        Wrap(spacing:8,children:[
-          FilledButton.icon(onPressed:scanFilament,icon:const Icon(Icons.qr_code_scanner),label:const Text('Barcode scannen')),
-          OutlinedButton.icon(onPressed:enterCode,icon:const Icon(Icons.keyboard),label:const Text('Filamentcode eingeben')),
-          OutlinedButton.icon(onPressed:()=>addFilament(),icon:const Icon(Icons.add),label:const Text('Manuell hinzufügen')),
-        ]),
-        for(var i=0;i<stock.length;i++)
-          Card(child:ListTile(
-            title:Text('${stock[i]['brand']} ${stock[i]['material']} ${stock[i]['color']}'),
-            subtitle:Text('${stock[i]['grams']} g · Barcode: ${stock[i]['barcode']}'),
+  @override Widget build(BuildContext context) => PopScope(
+    canPop: !inventoryOpen, onPopInvokedWithResult: (didPop, result) {
+      if (!didPop && inventoryOpen) setState(() => inventoryOpen = false);
+    }, child: Scaffold(
+    appBar: AppBar(title: Text(inventoryOpen ? 'Filamentlager' : '3D Print Optimizer'),
+      leading: inventoryOpen ? IconButton(tooltip: 'Zur Startseite', icon: const Icon(Icons.arrow_back),
+        onPressed: () => setState(() => inventoryOpen = false)) : null,
+      actions: [
+        IconButton(tooltip: 'Updates prüfen', onPressed: () => checkForUpdates(manual: true), icon: const Icon(Icons.system_update)),
+        IconButton(tooltip: 'Einrichtung', onPressed: setup, icon: const Icon(Icons.settings_outlined)),
+      ]),
+    body: SafeArea(top: false, child: prefs == null ? const Center(child: CircularProgressIndicator()) :
+      ListView(padding: const EdgeInsets.fromLTRB(20, 8, 20, 24), children: [
+        if (!inventoryOpen) ...[
+          const Text('Deine Idee. Dein Druck.', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w800, height: 1.2)),
+          const SizedBox(height: 8),
+          const Text('Vom Modell zu passenden Einstellungen.', style: TextStyle(color: Color(0xffa8b5c9), fontSize: 16)),
+          const SizedBox(height: 24),
+          Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(
+            gradient: const LinearGradient(colors: [Color(0xff164b55), Color(0xff24345c)],
+              begin: Alignment.topLeft, end: Alignment.bottomRight),
+            borderRadius: BorderRadius.circular(28), border: Border.all(color: const Color(0xff39747e))),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              const Icon(Icons.view_in_ar_rounded, size: 48, color: Color(0xff9af4e6)),
+              const SizedBox(height: 16),
+              const Text('Neues Druckprojekt', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 6), const Text('Datei öffnen · Fragen beantworten · Loslegen'),
+              const SizedBox(height: 20),
+              SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: openModel,
+                icon: const Icon(Icons.add), label: const Text('STL / 3MF öffnen'))),
+            ])),
+          const SizedBox(height: 18),
+          actionCard(title: 'Meine Druckprojekte', subtitle: 'Einstellungen wieder öffnen',
+            icon: Icons.folder_copy_outlined, color: const Color(0xffb8a6ff),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrintProjectsPage()))),
+          actionCard(title: 'Filamentlager', subtitle: '${stock.length} Rollen · scannen und verwalten',
+            icon: Icons.qr_code_scanner_rounded, color: const Color(0xff6ee7d8),
+            onTap: () => setState(() => inventoryOpen = true)),
+          const SizedBox(height: 12),
+          Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [const Icon(Icons.print_outlined, size: 20), const SizedBox(width: 10),
+                Expanded(child: Text(printer, style: const TextStyle(fontWeight: FontWeight.w600))),
+                Text('$nozzle mm', style: TextStyle(color: Theme.of(context).colorScheme.primary))]),
+              const SizedBox(height: 8), Text(slicer, style: const TextStyle(color: Color(0xffa8b5c9))),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(initialValue: qualityMode,
+                decoration: const InputDecoration(labelText: 'Standard-Druckmodus'),
+                items: ['Maximale Qualität', 'Ausgewogen', 'Schneller Druck']
+                  .map((mode) => DropdownMenuItem(value: mode, child: Text(mode))).toList(),
+                onChanged: (value) async {
+                  if (value == null) return;
+                  setState(() => qualityMode = value); await save();
+                }),
+              if (!configured) TextButton.icon(onPressed: setup, icon: const Icon(Icons.settings_outlined),
+                label: const Text('Drucker einrichten')),
+            ]))),
+        ] else ...[
+          const Text('Deine Farben. Dein Vorrat.', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 16),
+          FilledButton.icon(onPressed: scanFilament, icon: const Icon(Icons.qr_code_scanner), label: const Text('Barcode scannen')),
+          const SizedBox(height: 10),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            OutlinedButton.icon(onPressed: enterCode, icon: const Icon(Icons.keyboard), label: const Text('Filamentcode eingeben')),
+            OutlinedButton.icon(onPressed: () => addFilament(), icon: const Icon(Icons.add), label: const Text('Manuell hinzufügen')),
+          ]),
+          const SizedBox(height: 18),
+          for (var i = 0; i < stock.length; i++) Card(child: ListTile(
+            contentPadding: const EdgeInsets.all(14),
+            leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+              child: const Icon(Icons.cyclone)),
+            title: Text('${stock[i]['brand']} ${stock[i]['material']} ${stock[i]['color']}'),
+            subtitle: Text('${stock[i]['grams']} g · ${stock[i]['barcode']}'),
             onTap: () => addFilament(index: i),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-              IconButton(tooltip: 'Restmenge bearbeiten', icon: const Icon(Icons.edit),
-                onPressed: () => addFilament(index: i)),
-              IconButton(tooltip: 'Rolle löschen', icon:const Icon(Icons.delete_outline),onPressed:()async{
-                setState(()=>stock.removeAt(i)); await save();
+              IconButton(tooltip: 'Restmenge bearbeiten', icon: const Icon(Icons.edit_outlined), onPressed: () => addFilament(index: i)),
+              IconButton(tooltip: 'Rolle löschen', icon: const Icon(Icons.delete_outline), onPressed: () async {
+                final next = [...stock]..removeAt(i);
+                if (await prefs!.setString('stock', jsonEncode(next)) && mounted) setState(() => stock = next);
               }),
-            ]),
-          )),
-        if(stock.isEmpty) const Padding(padding:EdgeInsets.all(16),
-          child:Text('Noch keine Filamentrollen vorhanden.')),
-        const SizedBox(height:20),
-        const Text('Weitere Funktionen folgen',style:TextStyle(fontSize:18,fontWeight:FontWeight.bold)),
-        const Text('Die Modellvorschau prüft Abmessungen und gibt bei geeigneten STL-Modellen einen Überhanghinweis. Gelenke und automatische Druckausrichtung werden noch nicht geprüft. Farbwechseloptimierung, Online-Recherche, Cloud-Synchronisierung und Slicer-Export folgen.'),
-      ]),
-  );
+            ]))),
+          if (stock.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 40), child: Column(children: [
+            Icon(Icons.cyclone, size: 56, color: Color(0xff6ee7d8)), SizedBox(height: 16),
+            Text('Dein Lager ist noch leer.', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+            Text('Scanne deine erste Rolle oder füge sie manuell hinzu.'),
+          ])),
+        ],
+      ])),
+  ));
 }
 
 
@@ -356,7 +352,7 @@ class _MeshReader {
   static _Mesh inBackground((String, Uint8List) input) {
     final parsed = fromBytes(input.$1, input.$2);
     // Prepare the render buffer on the worker too, before returning to the UI.
-    parsed.supports = assessSupports(parsed.renderVertices, is3mf: input.$1.toLowerCase().endsWith('.3mf'));
+    parsed.supports = assessSupports(parsed.renderVertices);
     return parsed;
   }
 
@@ -400,41 +396,13 @@ class _MeshReader {
   }
 
   static _Mesh _from3mf(Uint8List bytes) {
-    final archive = ZipDecoder().decodeBytes(bytes, verify: true);
-    final models = archive.files.where((f) => f.isFile &&
-        f.name.toLowerCase().endsWith('.model')).toList();
-    if (models.isEmpty) throw const FormatException('Keine 3MF-Modelldaten gefunden.');
-    final all = <_Triangle>[];
-    for (final model in models) {
-      final content = model.content;
-      final raw = content is List<int> ? content : <int>[];
-      final doc = XmlDocument.parse(utf8.decode(raw));
-      // Einfache 3MF-Meshes. Komponenten und Build-Transformationen
-      // werden nicht interpretiert und duerfen nicht stillschweigend
-      // als vollstaendige Druckplattenanalyse gelten.
-      for (final mesh in doc.descendants.whereType<XmlElement>()
-          .where((e) => e.name.local == 'mesh')) {
-        final vertices = <_V3>[];
-        for (final v in mesh.descendants.whereType<XmlElement>()
-            .where((e) => e.name.local == 'vertex')) {
-          double coord(String n) => double.parse(v.getAttribute(n) ?? '0');
-          vertices.add(_V3(coord('x'), coord('y'), coord('z')));
-        }
-        for (final t in mesh.descendants.whereType<XmlElement>()
-            .where((e) => e.name.local == 'triangle')) {
-          final a = int.parse(t.getAttribute('v1') ?? '-1');
-          final b = int.parse(t.getAttribute('v2') ?? '-1');
-          final c = int.parse(t.getAttribute('v3') ?? '-1');
-          if (a < 0 || b < 0 || c < 0 ||
-              a >= vertices.length || b >= vertices.length || c >= vertices.length) {
-            throw const FormatException('3MF enthält ungültige Eckpunkte.');
-          }
-          all.add(_Triangle(vertices[a], vertices[b], vertices[c]));
-        }
-      }
+    final vertices = readThreeMfTriangles(bytes);
+    final faces = <_Triangle>[];
+    for (var i = 0; i < vertices.length; i += 9) {
+      _V3 point(int offset) => _V3(vertices[offset],vertices[offset+1],vertices[offset+2]);
+      faces.add(_Triangle(point(i),point(i+3),point(i+6)));
     }
-    if (all.isEmpty) throw const FormatException('Keine 3MF-Dreiecke gefunden.');
-    return _summarize(all);
+    return _summarize(faces);
   }
 
   static _Mesh _summarize(List<_Triangle> all) {
@@ -610,11 +578,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           Text(m.supports.reason),
           const Text('Bewertung für die Dateiausrichtung. Drehen in der Vorschau ändert die Druckausrichtung nicht.'),
           const SizedBox(height: 12),
-          const Text('Hinweis: Dies ist eine einfache drehbare Geometrievorschau. '
-            'Bei 3MF werden Komponenten, Farbzuweisungen und Transformationen '
-            'noch nicht vollständig ausgewertet. Die Ansicht verändert nicht '
-            'die Originaldatei. Vollständige Druckbarkeit und Passgenauigkeit werden noch '
-            'nicht automatisch geprüft.'),
+          const Text('Originaldatei bleibt unverändert. Stützenhinweis im Slicer prüfen.'),
         ] else if (!loading) ...[
           const SizedBox(height: 32),
           const Icon(Icons.view_in_ar, size: 64),

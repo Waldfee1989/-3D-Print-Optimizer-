@@ -1,4 +1,8 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'material_advice.dart';
@@ -86,12 +90,38 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
       if (mounted) setState(() => error = 'Speichern fehlgeschlagen. Deine Antworten bleiben hier erhalten. Bitte erneut versuchen.');
     } finally { if (mounted) setState(() => saving = false); }
   }
+  Future<void> exportSettings(bool asFile) async {
+    try {
+      final text = projectSettingsText(current);
+      if (asFile) {
+        final bytes = Uint8List.fromList(utf8.encode(text));
+        final name = widget.project.fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
+        final target = await FilePicker.platform.saveFile(dialogTitle: 'Druckeinstellungen speichern',
+          fileName: '${name}_Einstellungen.txt', type: FileType.custom,
+          allowedExtensions: ['txt'], bytes: bytes);
+        if (target == null) return;
+        if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+          await File(target).writeAsBytes(bytes, flush: true);
+        }
+      } else { await Clipboard.setData(ClipboardData(text: text)); }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(asFile ? 'Einstellungsdatei gespeichert.' : 'Einstellungen kopiert.')));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Export fehlgeschlagen. Bitte erneut versuchen.')));
+    }
+  }
   @override Widget build(BuildContext context) {
     final p = current;
     return Scaffold(appBar: AppBar(title: Text(result ? 'Deine Druckempfehlung' : 'Was ist dir wichtig?'),
       actions: [if (!result) TextButton(onPressed: saving ? null : finish,
-        child: Text(saving ? 'Speichert …' : 'Speichern'))]),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
+        child: Text(saving ? 'Speichert …' : 'Speichern')),
+        if (result) PopupMenuButton<bool>(tooltip: 'Einstellungen exportieren',
+          onSelected: exportSettings, itemBuilder: (_) => const [
+            PopupMenuItem(value: false, child: Text('Einstellungen kopieren')),
+            PopupMenuItem(value: true, child: Text('Als Textdatei speichern')),
+          ]),
+      ]),
+      body: SafeArea(top: false, child: ListView(padding: const EdgeInsets.all(16), children: [
         Text(p.fileName, style: Theme.of(context).textTheme.titleLarge),
         Text(p.dimensions),
         const SizedBox(height: 16),
@@ -99,9 +129,7 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
           ProjectRecommendation(project: p),
           OutlinedButton(onPressed: () => setState(() => result = false),
             child: const Text('Antworten ändern')),
-          const Text('Projekt gespeichert. Unter „Meine Druckprojekte“ wieder öffnen. '
-            'Gespeichert sind Dateiname, Abmessungen, Antworten und Einstellungen. '
-            'Die Modelldatei bleibt an ihrem bisherigen Speicherort.'),
+          const Text('Gespeichert in „Meine Druckprojekte“. Originaldatei bleibt unverändert.'),
         ] else ...[
           const Text('Beantworte die Fragen für dieses Modell und tippe oben auf Speichern. Danach erhältst du Material und Druckeinstellungen zusammen.'),
           SwitchListTile(title: const Text('Mechanisches Teil / Gebrauchsteil'), value: functional,
@@ -129,9 +157,63 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
           if (error != null) Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
           const Text('Fertig? Tippe oben auf Speichern, um deine Empfehlung zu sehen.'),
         ],
-      ]));
+      ])));
   }
 }
+
+// General starting points within the published material ranges, not a brand profile.
+// https://help.prusa3d.com/filament-material-guide
+// https://de.store.sunlu.com/blogs/3d-printing-guide/der-ultimative-leitfaden-zu-3d-drucker-filamenten-pla-abs-petg-mehr-2025
+({int nozzle, int bed})? materialTemperatures(String material) => switch (material) {
+  'PLA' => (nozzle: 205, bed: 55),
+  'PETG' => (nozzle: 240, bed: 80),
+  'ASA' => (nozzle: 250, bed: 100),
+  'TPU' => (nozzle: 220, bed: 50),
+  _ => null,
+};
+
+Map<String, String> projectSettings(PrintProject p) {
+  final a = p.advice;
+  final t = materialTemperatures(a.material);
+  final standardNozzle = double.tryParse(p.nozzle.replaceAll(',', '.')) == .4;
+  final outerSpeed = a.material == 'TPU' ? 25
+    : p.surface == 'Sehr glatt' || p.priority == 'Maximale Qualität' ? 35
+    : p.priority == 'Ausgewogen' ? 50 : 80;
+  return {
+    'Filament': a.material,
+    if (t != null) 'Filament-Temperatur': '${t.nozzle} °C',
+    if (t != null) 'Druckbett': '${t.bed} °C',
+    'Düse': '${p.nozzle} mm',
+    if (standardNozzle) 'Schichthöhe': a.layer,
+    if (standardNozzle) 'Erste Schicht': '0,20 mm · 20 mm/s',
+    if (standardNozzle) 'Wände': '${a.walls}',
+    if (standardNozzle) 'Füllung': '${a.infill} % · Gyroid',
+    if (standardNozzle) 'Deck-/Bodenschichten': a.layer == '0,12 mm' ? '7 / 5' : '5 / 4',
+    if (standardNozzle) 'Außenwand': '$outerSpeed mm/s',
+    'Weitere Geschwindigkeiten': 'Materialprofil',
+    'Kühlung': a.material == 'PLA' ? '100 % ab Schicht 3'
+      : a.material == 'PETG' ? '50 % ab Schicht 3'
+      : a.material == 'ASA' ? '0 % (Brücken: Materialprofil)' : 'TPU-Herstellerprofil',
+    'Rückzug': 'Drucker-/Filamentprofil',
+    'Fluss / Beschleunigung': 'Kalibriertes Druckerprofil',
+    'Haftung': a.material == 'ASA' ? '8 mm Brim · geeignetes Haftmittel'
+      : a.material == 'TPU' ? 'Trennschicht nach Druckplattenfreigabe'
+      : a.material == 'PETG' ? 'Trennschicht auf glatter PEI-Platte' : 'Saubere Druckplatte',
+    'Bauraum': a.material == 'ASA' ? 'Geschlossen · geeignete Abluft' : 'Nicht aktiv beheizen',
+    'Stützen': p.supportStatus,
+    'Druckausrichtung': 'Wie in der Datei',
+    'Oberfläche': p.surface,
+  };
+}
+
+String projectSettingsText(PrintProject project) => [
+  '3D Print Optimizer · ${project.fileName}',
+  '${project.printer} · ${project.slicer}',
+  for (final row in projectSettings(project).entries) '${row.key}: ${row.value}',
+  'Startwerte. Rollenetikett und kalibriertes Druckerprofil gehen vor.',
+  'Stützenhinweis für die Dateiausrichtung; im Slicer prüfen.',
+  'Einstellungsliste zur manuellen Übernahme, kein importierbares Slicer-Profil.',
+].join('\n');
 
 class ProjectRecommendation extends StatelessWidget {
   const ProjectRecommendation({super.key, required this.project});
@@ -139,33 +221,32 @@ class ProjectRecommendation extends StatelessWidget {
   @override Widget build(BuildContext context) {
     final p = project;
     final a = p.advice;
+    final rows = projectSettings(p);
     final standardNozzle = double.tryParse(p.nozzle.replaceAll(',', '.')) == .4;
-    final speed = a.material == 'TPU' ? 'TPU-Profil der Filamentrolle verwenden; langsam drucken'
-      : p.surface == 'Sehr glatt' || p.priority == 'Maximale Qualität' ? '35 mm/s'
-      : p.priority == 'Ausgewogen' ? '50 mm/s' : '80 mm/s';
     return Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
       crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('Empfohlenes Material: ${a.material}', style: Theme.of(context).textTheme.titleLarge),
-        Text(a.reason),
+        Row(children: [Icon(Icons.tune, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 10), Text('Deine Einstellungen', style: Theme.of(context).textTheme.titleLarge)]),
         const SizedBox(height: 12),
-        Text('${p.printer} · ${p.slicer} · Düse ${p.nozzle} mm'),
-        Text('Oberfläche: ${p.surface} · Priorität: ${p.priority}'),
-        if (p.surface == 'Sehr glatt' && p.priority != 'Maximale Qualität')
-          const Text('Für die sehr glatte Oberfläche haben feine Schichten Vorrang vor der Geschwindigkeit.'),
-        const SizedBox(height: 12),
-        if (standardNozzle) ...[
-          Text('Schichthöhe: ${a.layer}'), Text('Wände: ${a.walls}'),
-          Text('Infill: ${a.infill} %'), Text('Außenwand: $speed'),
-        ] else const Text('Für diese Düsengröße ein passendes Slicer-Profil verwenden. Die Zahlenwerte sind für 0,4 mm ausgelegt.'),
-        const Text('Temperatur, Druckbett, Kühlung und weitere Geschwindigkeiten: Profil für das empfohlene Material und die konkrete Filamentrolle verwenden.'),
-        const SizedBox(height: 12),
-        Text('Stützstrukturen: ${p.supportStatus}', style: Theme.of(context).textTheme.titleMedium),
-        Text(p.supportReason),
-        const Text('Gilt für die Ausrichtung der Datei. Vorschau-Drehung ändert die Druckausrichtung nicht. Bei anderer Ausrichtung im Slicer neu prüfen.'),
-        const SizedBox(height: 12), Text(a.notes),
-        const SizedBox(height: 12),
-        const Text('Dies sind passende Startwerte aus deinen Antworten. Die Überhangprüfung ist eine geometrische Einschätzung; sie ersetzt keine Slicer-Vorschau. Belastbarkeit und vollständige Druckbarkeit werden nicht berechnet. '
-          'Im Slicer prüfen und bei Bedarf mit einem Probedruck abstimmen. Keine automatische Übertragung in den Slicer.'),
+        for (final row in rows.entries) Padding(
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          child: Text('${row.key}: ${row.value}', style: const TextStyle(fontSize: 16))),
+        if (!standardNozzle) const Text('Weitere Werte: passendes Düsenprofil verwenden.'),
+        const Divider(height: 24),
+        const Text('Startwerte · Angaben auf deiner Filamentrolle gehen vor.', style: TextStyle(fontSize: 13)),
+        ExpansionTile(tilePadding: EdgeInsets.zero, title: const Text('Hinweise und Begründung'), children: [
+          Text(a.reason), const SizedBox(height: 12), Text(a.notes),
+          const SizedBox(height: 12), Text(p.supportReason),
+          const SizedBox(height: 12),
+          Text('${p.printer} · ${p.slicer} · Priorität: ${p.priority}'),
+          if (p.surface == 'Sehr glatt' && p.priority != 'Maximale Qualität')
+            const Text('Sehr glatte Oberfläche hat Vorrang vor Geschwindigkeit.'),
+          const SizedBox(height: 12),
+          const Text('Überhangprüfung in Dateiausrichtung; Drehen in der Vorschau verändert die Drucklage nicht. '
+            'Brücken und Stützbereiche im Slicer prüfen. Kein Festigkeitsnachweis. '
+            'Die Werte werden nicht automatisch an den Slicer übertragen.'),
+          const SizedBox(height: 12),
+        ]),
       ])));
   }
 }

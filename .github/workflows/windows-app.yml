@@ -1,0 +1,100 @@
+name: Windows App erstellen
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, simpler-app]
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/windows-app.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Windows-Projekt erstellen
+        run: flutter create --platforms=windows --project-name print_optimizer .
+      - name: Abhaengigkeiten laden
+        run: flutter pub get
+      - name: Windows App bauen
+        run: flutter build windows --release --build-number=${{ github.run_number }}
+      - name: Windows-Paket mit Laufzeitbibliotheken erstellen
+        shell: pwsh
+        run: |
+          $releaseDir = 'build/windows/x64/runner/Release'
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vsPath = & $vswhere -latest -property installationPath
+          $runtimeDirs = Get-ChildItem "$vsPath/VC/Redist/MSVC/*/x64/Microsoft.VC*.CRT" -Directory |
+            Sort-Object FullName -Descending
+          if (-not $runtimeDirs) { throw 'Visual-C++-Laufzeitbibliotheken fehlen.' }
+          foreach ($dll in @('msvcp140.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+            $source = Join-Path $runtimeDirs[0].FullName $dll
+            if (-not (Test-Path $source)) { throw "Laufzeitbibliothek fehlt: $dll" }
+            Copy-Item $source $releaseDir
+          }
+          @'
+          3D Print Optimizer fuer Windows 11
+
+          1. ZIP-Datei vollstaendig entpacken.
+          2. print_optimizer.exe im entpackten Ordner starten.
+          3. DLLs und den Ordner data neben der EXE belassen.
+
+          Die Windows-App ist nicht mit einem Windows-Codezertifikat signiert.
+          Windows kann beim Start eine Sicherheitsrueckfrage anzeigen.
+          Filamentcodes unter Windows manuell eingeben; Kamerascannen auf Android.
+          Daten werden auf diesem Geraet gespeichert. Cloud-Synchronisierung ist noch nicht eingerichtet.
+          '@ | Set-Content -Encoding utf8 "$releaseDir/START_HIER.txt"
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath '3D-Print-Optimizer-Windows.zip'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: 3D-Print-Optimizer-Windows
+          path: 3D-Print-Optimizer-Windows.zip
+
+  publish:
+    if: github.ref == 'refs/heads/main'
+    needs: windows
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: 3D-Print-Optimizer-Windows
+      - name: Zugehoerige Android-Veroeffentlichung abwarten
+        id: target
+        uses: actions/github-script@v7
+        with:
+          script: |
+            for (let attempt = 0; attempt < 90; attempt++) {
+              const {data} = await github.rest.actions.listWorkflowRuns({
+                owner: context.repo.owner, repo: context.repo.repo,
+                workflow_id: 'android-apk.yml', head_sha: context.sha, branch: 'main', event: 'push',
+              });
+              const run = data.workflow_runs.find(run => run.head_sha === context.sha);
+              if (run?.status === 'completed') {
+                if (run.conclusion !== 'success') throw new Error('Android-Veroeffentlichung fehlgeschlagen.');
+                const tag = `build-${run.run_number}`;
+                await github.rest.repos.getReleaseByTag({...context.repo, tag});
+                core.setOutput('tag', tag);
+                return;
+              }
+              await new Promise(resolve => setTimeout(resolve, 10000));
+            }
+            throw new Error('Keine erfolgreiche Android-Veroeffentlichung fuer diesen Commit gefunden.');
+      - name: Windows ZIP derselben Veroeffentlichung hinzufuegen
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.target.outputs.tag }}
+          files: 3D-Print-Optimizer-Windows.zip
