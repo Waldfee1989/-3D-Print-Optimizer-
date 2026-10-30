@@ -49,6 +49,7 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
   bool busy=false,consent=false,approved=false,needsAnalysis=true;
   Uint8List? stl;PlatePart? part;
   Directory? directory;
+  Future<void> writes=Future<void>.value();
   @override void initState(){super.initState();service=widget.service;initialize();}
   Future<void> initialize()async{
     setState(()=>busy=true);
@@ -82,13 +83,17 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
     }catch(_){error='Der vorherige Fotoentwurf konnte nicht vollständig geladen werden. Bitte die Fotos prüfen.';}
     finally{if(mounted)setState(()=>busy=false);}
   }
-  Future<void> persist()async{
-    if(directory==null)return;
-    for(final photo in photos){final file=File('${directory!.path}/${photo.id}.png');if(!await file.exists())await file.writeAsBytes(photo.png,flush:true);}
-    final file=File('${directory!.path}/draft.json'),temporary=File('${directory!.path}/draft.tmp'),backup=File('${directory!.path}/draft.bak');
-    await temporary.writeAsString(jsonEncode({'photos':photos.map((p)=>p.id).toList(),'plan':plan?.json,'answers':answers,'needs_analysis':needsAnalysis}),flush:true);
-    if(await backup.exists())await backup.delete();if(await file.exists())await file.rename(backup.path);
-    await temporary.rename(file.path);if(await backup.exists())await backup.delete();
+  Future<void> persist(){
+    final target=directory;if(target==null)return Future<void>.value();
+    final images=List<PhotoPartImage>.of(photos),metadata=jsonEncode({'photos':photos.map((p)=>p.id).toList(),'plan':plan?.json,'answers':answers,'needs_analysis':needsAnalysis});
+    final operation=writes.then((_)async{
+      for(final photo in images){final file=File('${target.path}/${photo.id}.png');if(!await file.exists())await file.writeAsBytes(photo.png,flush:true);}
+      final file=File('${target.path}/draft.json'),temporary=File('${target.path}/draft.tmp'),backup=File('${target.path}/draft.bak');
+      await temporary.writeAsString(metadata,flush:true);
+      if(await backup.exists())await backup.delete();if(await file.exists())await file.rename(backup.path);
+      await temporary.rename(file.path);if(await backup.exists())await backup.delete();
+    });
+    writes=operation.catchError((Object _){});return operation;
   }
   void failure(Object e){if(mounted)setState(()=>error=e is FormatException?e.message:'Die Aktion konnte nicht beendet werden. Bitte erneut versuchen.');}
   Future<void> addPhotos(bool camera)async{
@@ -171,8 +176,8 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
   Future<void> reset()async{
     final yes=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Neues Foto-Bauteil?'),content:const Text('Der aktuelle Fotoentwurf mit seinen Maßangaben wird entfernt. Bereits gespeicherte STL-Dateien und Druckprojekte bleiben erhalten.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Abbrechen')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Neuer Entwurf'))]));
     if(yes!=true||!mounted)return;
-    setState((){photos.clear();answers.clear();plan=null;part=null;stl=null;selected=null;approved=false;needsAnalysis=true;error=null;});
-    try{await persist();if(directory!=null){await for(final file in directory!.list()){if(file is File&&file.path.endsWith('.png'))await file.delete();}}}catch(e){failure(e);}
+    setState((){busy=true;photos.clear();answers.clear();plan=null;part=null;stl=null;selected=null;approved=false;needsAnalysis=true;error=null;});
+    try{await persist();if(directory!=null){await for(final file in directory!.list()){if(file is File&&file.path.endsWith('.png'))await file.delete();}}}catch(e){failure(e);}finally{if(mounted)setState(()=>busy=false);}
   }
   @override void dispose(){service?.cancel();super.dispose();}
   @override Widget build(BuildContext context){
