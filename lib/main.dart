@@ -23,10 +23,15 @@ import 'printer_setup.dart';
 import 'nozzles.dart';
 import 'low_stock.dart';
 import 'help_chat.dart';
+import 'model_cut.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() => runApp(const OptimizerApp());
+void main() {
+  LicenseRegistry.addLicense(() async* { yield LicenseEntryWithLineBreaks(['Manifold'],await rootBundle.loadString('assets/licenses/Manifold.txt')); });
+  runApp(const OptimizerApp());
+}
 
 Future<(String,Uint8List)?> chooseModelBytes() async {
   final result = await FilePicker.platform.pickFiles(type: FileType.custom,
@@ -571,6 +576,14 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
       ModelSizeDialog(scale: modelScale,width: m.size.x,editWidth: width));
     if (mounted && scale != null) setState(() => modelScale = scale);
   }
+  Future<void> cutModel() async {
+    final m = mesh;
+    if (m == null || loading || printerBed == null) return;
+    final parts = await requestModelCut(context,PlatePart(name: fileName ?? 'Modell',vertices: m.renderVertices,
+      unitScale: m.radius,width: m.size.x,depth: m.size.y,height: m.size.z),modelScale,bed: printerBed);
+    if (!mounted || parts == null) return;
+    await Navigator.push(context,MaterialPageRoute(builder: (_) => BuildPlatePage(pickPart: pickPlatePart,bed: printerBed!,printer: widget.printer,initialParts: parts)));
+  }
   Future<void> saveModel() async {
     final m = mesh;
     if (m == null || loading) return;
@@ -663,6 +676,8 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
             if (modelScale != 1) TextButton(onPressed: () => setState(() => modelScale = 1), child: const Text('Originalgröße')),
           ]),
           const Text('Proportionen bleiben erhalten. Oben als neue STL speichern.'),
+          if (Platform.isAndroid) OutlinedButton.icon(onPressed: loading || printerBed == null ? null : cutModel,
+            icon: const Icon(Icons.content_cut),label: const Text('Teilen und Zapfen einfügen')),
           if (printerBed != null) Text('Bauraum: ${printerBed!.width} × ${printerBed!.depth} × ${printerBed!.height} mm'),
           OutlinedButton.icon(onPressed: loading || printerBed == null ? null : () => Navigator.push(context,MaterialPageRoute(builder: (_) =>
             BuildPlatePage(pickPart: pickPlatePart,bed: printerBed ?? const PrinterBed(250,250,250),printer: widget.printer,initialScale: modelScale,initialPart: PlatePart(name: fileName ?? 'Modell',

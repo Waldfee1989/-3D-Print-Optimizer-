@@ -77,7 +77,7 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
   bool saving = false;
   String? error;
   List<OwnedNozzle> ownedNozzles = [];
-  late String selectedNozzle = widget.project.nozzle.replaceAll(',','.');
+  late String selectedNozzle = double.tryParse(widget.project.nozzle.replaceAll(',','.'))?.toString() ?? widget.project.nozzle;
   String? installedNozzle;
   Future<void> loadOwnedNozzles() async {
     try {

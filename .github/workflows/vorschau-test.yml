@@ -14,6 +14,9 @@ on:
       - model-tools
     paths:
       - 'lib/**'
+      - 'native/**'
+      - 'scripts/configure_android_geometry.py'
+      - 'scripts/android_geometry/**'
       - 'test/**'
       - 'pubspec.yaml'
       - '.github/workflows/vorschau-test.yml'
@@ -336,3 +339,16 @@ jobs:
               message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print('::error title=Vorschau-Testdetails::' + message)
 
+
+  native-geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native Geometrie bauen
+        run: cmake -S native/model_geometry -B build/native_geometry -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build/native_geometry --parallel 2
+      - name: Geschlossene Schnitte und Zapfen testen
+        run: ctest --test-dir build/native_geometry --output-on-failure
+      - name: Android-Einrichtung pruefen
+        run: python3 -m unittest discover -s scripts/tests -v

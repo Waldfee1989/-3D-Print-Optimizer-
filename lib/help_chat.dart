@@ -32,7 +32,7 @@ class _HelpChatPageState extends State<HelpChatPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) { if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent,duration: const Duration(milliseconds: 200),curve: Curves.easeOut); });
   }
   @override void dispose() { input.dispose(); scroll.dispose(); super.dispose(); }
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Druckhilfe')),body: SafeArea(top: false,child: Column(children: [
+  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Druckhilfe'),actions: [IconButton(tooltip: 'Open-Source-Lizenzen',onPressed: () => showLicensePage(context: context),icon: const Icon(Icons.info_outline))]),body: SafeArea(top: false,child: Column(children: [
     const Padding(padding: EdgeInsets.all(8),child: Text('Offline · hinterlegte Antworten · keine Übertragung')),
     Expanded(child: ListView(controller: scroll,padding: const EdgeInsets.all(16),children: [
       for (final message in messages) Align(alignment: message.$1 ? Alignment.centerRight : Alignment.centerLeft,

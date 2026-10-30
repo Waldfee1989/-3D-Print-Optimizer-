@@ -11,6 +11,7 @@ import 'model_size_dialog.dart';
 import 'print_geometry.dart';
 import 'support_analysis.dart';
 import 'printer_setup.dart';
+import 'model_cut.dart';
 
 class PlatePart {
   const PlatePart({required this.name,required this.vertices,required this.unitScale,
@@ -111,9 +112,10 @@ Uint8List encodePlateStl(List<PlatePlacement> placements) {
 }
 
 class BuildPlatePage extends StatefulWidget {
-  const BuildPlatePage({super.key,required this.pickPart,this.initialPart,this.initialScale = 1,this.bed = const PrinterBed(250,250,250),this.printer = 'Anycubic Kobra S1'});
+  const BuildPlatePage({super.key,required this.pickPart,this.initialPart,this.initialParts = const [],this.initialScale = 1,this.bed = const PrinterBed(250,250,250),this.printer = 'Anycubic Kobra S1'});
   final Future<PlatePart?> Function() pickPart;
   final PlatePart? initialPart;
+  final List<PlatePart> initialParts;
   final double initialScale;
   final PrinterBed bed;
   final String printer;
@@ -131,6 +133,7 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
   @override void initState() {
     super.initState();
     if (widget.initialPart != null) addPart(widget.initialPart!,widget.initialScale);
+    for (final part in widget.initialParts) { addPart(part,1); }
   }
   void addPart(PlatePart part,double scale) {
     final id = '${counter++}';
@@ -187,6 +190,21 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
     final scale = await showDialog<double>(context: context,builder: (_) => ModelSizeDialog(
       scale: p.scale,width: p.turns.isOdd ? p.part.depth : p.part.width,editWidth: false));
     if (mounted && scale != null) change(clamp(p.copy(scale: scale)));
+  }
+  Future<void> cutSelected() async {
+    final old = parts[selected];
+    final vertices = old.turns == 0 ? old.part.vertices : await compute(rotatePlateForCut,(old.part.vertices,old.turns));
+    if (!mounted) return;
+    final input = PlatePart(name: old.part.name,vertices: vertices,unitScale: old.part.unitScale,
+      width: old.turns.isOdd ? old.part.depth : old.part.width,depth: old.turns.isOdd ? old.part.width : old.part.depth,height: old.part.height);
+    final cut = await requestModelCut(context,input,old.scale,bed: widget.bed);
+    if (cut == null || !mounted) return;
+    setState(() {
+      beforeOrientation = null; parts = parts.where((p) => p.id != old.id).toList();
+      for (final part in cut) { addPart(part,1); }
+    });
+    final image = images.remove(old.id);
+    if (image != null) WidgetsBinding.instance.addPostFrameCallback((_) => image.dispose());
   }
   Future<void> position() async {
     final p = parts[selected];
@@ -276,6 +294,7 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
         Wrap(spacing: 8,runSpacing: 8,children: [
           OutlinedButton(onPressed: busy ? null : position,child: const Text('X / Y eingeben')),
           OutlinedButton(onPressed: busy ? null : resize,child: const Text('Größe ändern')),
+          if (Platform.isAndroid) OutlinedButton(onPressed: busy ? null : cutSelected,child: const Text('Teil schneiden')),
           OutlinedButton(onPressed: busy ? null : () => change(clamp(parts[selected].copy(turns: (parts[selected].turns+1)%4))),child: const Text('90° drehen')),
         ]),
       ],
