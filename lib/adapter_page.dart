@@ -144,7 +144,7 @@ class _DimensionEntryDialog extends StatefulWidget {
   @override State<_DimensionEntryDialog> createState()=>_DimensionEntryDialogState();
 }
 class _DimensionEntryDialogState extends State<_DimensionEntryDialog>{
-  late final controller=TextEditingController(text:widget.initial==null?'':AdapterMeasureSketch.millimetres(widget.initial!).replaceAll(' mm',''));
+  late final controller=TextEditingController(text:widget.initial?.toString().replaceAll('.',',')??'');
   late DiameterKind? kind=widget.kind;
   String? error;
   bool get isPort=>widget.field==AdapterField.first||widget.field==AdapterField.second;

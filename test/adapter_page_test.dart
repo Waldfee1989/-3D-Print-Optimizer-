@@ -65,9 +65,12 @@ void main(){
       if(bytes!=null)print('DIMENSION_SKETCH_PNG:${base64Encode(bytes.buffer.asUint8List())}');
     });
     await tester.tap(find.byKey(const ValueKey('sketch-length')));await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('sketch-dimension-input')),'6,8 cm');
+    await tester.enterText(find.byKey(const ValueKey('sketch-dimension-input')),'6,8125 cm');
     await tester.tap(find.text('Maß speichern'));await tester.pumpAndSettle();
-    expect(draft.length,68);expect(draft.first!.diameter,35);expect(draft.second!.diameter,50);expect(draft.wall,2.5);expect(draft.socket,15);
+    expect(draft.length,68.125);expect(draft.first!.diameter,35);expect(draft.second!.diameter,50);expect(draft.wall,2.5);expect(draft.socket,15);
+    await tester.tap(find.byKey(const ValueKey('sketch-length')));await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(find.byKey(const ValueKey('sketch-dimension-input'))).controller!.text,'68,125');
+    await tester.tap(find.text('Maß speichern'));await tester.pumpAndSettle();expect(draft.length,68.125);
     await tester.tap(find.byKey(const ValueKey('sketch-wall')));await tester.pumpAndSettle();
     await tester.enterText(find.byKey(const ValueKey('sketch-dimension-input')),'50');await tester.tap(find.text('Maß speichern'));await tester.pumpAndSettle();
     expect(find.textContaining('Maß zwischen'),findsOneWidget);expect(draft.wall,2.5);
