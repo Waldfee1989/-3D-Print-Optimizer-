@@ -136,8 +136,11 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
     final p = current;
     final available = <String>{selectedNozzle,for (final n in ownedNozzles)
       if (n.printer.trim().toLowerCase() == p.printer.trim().toLowerCase() && n.quantity > 0) n.diameter.toString()}.toList();
-    final proposal = recommendOwnedNozzle(ownedNozzles,p.printer,fine: surface == 'Sehr glatt',
+    final candidate = recommendOwnedNozzle(ownedNozzles,p.printer,fine: surface == 'Sehr glatt',
       fast: priority == 'Schneller Druck',functional: functional || highLoad);
+    final targetNozzle = surface == 'Sehr glatt' ? .2 : priority == 'Schneller Druck' || functional || highLoad ? .6 : .4;
+    final selectedDiameter = double.tryParse(selectedNozzle) ?? .4;
+    final proposal = candidate != null && (candidate.diameter-targetNozzle).abs() < (selectedDiameter-targetNozzle).abs()-1e-6 ? candidate : null;
     return Scaffold(appBar: AppBar(title: Text(result ? 'Deine Druckempfehlung' : 'Was ist dir wichtig?'),
       actions: [IconButton(tooltip: 'Druckhilfe',icon: const Icon(Icons.chat_bubble_outline),
         onPressed: () => Navigator.push(context,MaterialPageRoute(builder: (_) => HelpChatPage(project: current)))),
@@ -158,7 +161,7 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
           if (proposal != null && proposal.diameter != double.tryParse(selectedNozzle)) Card(child: Padding(
             padding: const EdgeInsets.all(16),child: Column(crossAxisAlignment: CrossAxisAlignment.start,children: [
               Text('Vorhandene Alternative: ${proposal.diameter} mm · ${proposal.material}'),
-              Text(surface == 'Sehr glatt' ? 'Kleinere Düse für Details; längere Druckzeit.' : 'Größere Düse für gröbere, schnellere Drucke.'),
+              Text(proposal.diameter < selectedDiameter ? 'Kleinere Düse für Details; längere Druckzeit.' : 'Größere Düse für gröbere, schnellere Drucke.'),
               TextButton(onPressed: saving ? null : () async { setState(() => selectedNozzle = proposal.diameter.toString()); await finish(); },
                 child: Text('Mit ${proposal.diameter} mm berechnen')),
             ]))),

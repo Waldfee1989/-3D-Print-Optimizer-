@@ -38,16 +38,19 @@ class PlatePlacement {
 }
 
 PlatePlacement placeNextPart(PlatePart part,List<PlatePlacement> existing,double width,double depth,String id,{double scale = 1,int turns = 0}) {
-  final prototype = PlatePlacement(id: id,part: part,x: 0,y: 0,scale: scale,turns: turns);
+  final original = PlatePlacement(id: id,part: part,x: 0,y: 0,scale: scale,turns: turns);
   final xs = <double>[5,for (final p in existing) p.bounds.right+5]..sort();
   final ys = <double>[5,for (final p in existing) p.bounds.bottom+5]..sort();
-  for (final y in ys) {
-    for (final x in xs) {
-      final next = prototype.copy(x: x+prototype.width/2,y: y+prototype.depth/2);
-      if (next.fits(width,depth) && existing.every((p) => !next.bounds.inflate(2).overlaps(p.bounds))) return next;
+  for (final turn in [turns,(turns+1)%4]) {
+    final prototype = original.copy(turns: turn);
+    for (final y in ys) {
+      for (final x in xs) {
+        final next = prototype.copy(x: x+prototype.width/2,y: y+prototype.depth/2);
+        if (next.fits(width,depth) && existing.every((p) => !next.bounds.inflate(2).overlaps(p.bounds))) return next;
+      }
     }
   }
-  return prototype.copy(x: width/2,y: depth/2);
+  return original.copy(x: width/2,y: depth/2);
 }
 
 (List<PlatePlacement>,int) autoOrientPlate((List<PlatePlacement>,double,double,double) request) {
