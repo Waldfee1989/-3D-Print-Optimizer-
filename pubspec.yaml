@@ -25,6 +25,10 @@ flutter:
     - assets/licenses/Manifold.txt
     - assets/licenses/CuraEngine.txt
     - assets/licenses/Cura.txt
+    - assets/licenses/GPL-3.0.txt
+    - assets/licenses/CuraEngine-Clipper.txt
+    - assets/licenses/CuraEngine-RapidJSON.txt
+    - assets/licenses/CuraEngine-stb.txt
     - assets/slicer/defaults.json
 
 

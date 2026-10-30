@@ -32,7 +32,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  LicenseRegistry.addLicense(() async* { yield LicenseEntryWithLineBreaks(['Manifold'],await rootBundle.loadString('assets/licenses/Manifold.txt'));for(final name in ['CuraEngine','Cura']){yield LicenseEntryWithLineBreaks([name],await rootBundle.loadString('assets/licenses/$name.txt'));} });
+  LicenseRegistry.addLicense(() async* { yield LicenseEntryWithLineBreaks(['Manifold'],await rootBundle.loadString('assets/licenses/Manifold.txt'));for(final name in ['CuraEngine','Cura','GPL-3.0','CuraEngine-Clipper','CuraEngine-RapidJSON','CuraEngine-stb']){yield LicenseEntryWithLineBreaks([name],await rootBundle.loadString('assets/licenses/$name.txt'));} });
   runApp(const OptimizerApp());
 }
 

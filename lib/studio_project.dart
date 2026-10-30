@@ -98,7 +98,7 @@ Map<String,Uint8List> _decodeProjectZip(Uint8List bytes){
     if(member.method==0){content=Uint8List.fromList(compressed);}
     else{
       final sink=_LimitedBytes(member.size);
-      final decoder=ZLibDecoder(raw:true).startChunkedConversion(sink);decoder.add(compressed);decoder.close();content=sink.builder.takeBytes();
+      final decoder=const ZLibCodec(raw:true).decoder.startChunkedConversion(sink);decoder.add(compressed);decoder.close();content=sink.builder.takeBytes();
     }
     if(content.length!=member.size||_crc32(content)!=member.crc)throw const FormatException('Projektdatei ist beschädigt.');
     files[member.name]=content;

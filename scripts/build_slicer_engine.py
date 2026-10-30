@@ -42,6 +42,11 @@ def build(output, android=False, abi='arm64-v8a', jobs=2):
         path_text=path_text.replace('char buffer[filePath.size()];','std::vector<char> buffer(filePath.size()+1);')
         path_text=path_text.replace('std::strcpy(buffer, filePath.c_str())','std::strcpy(buffer.data(), filePath.c_str())').replace('dirname(buffer)','dirname(buffer.data())')
         path_source.write_text('// Print Optimizer adaptation, 2026-10-30: sized path buffer.\n'+path_text)
+    main=source/'src/main.cpp';main_text=main.read_text()
+    if 'PR_SET_PDEATHSIG' not in main_text:
+        main_text=main_text.replace('#include <iostream>','#if defined(__ANDROID__)\n#include <sys/prctl.h>\n#include <unistd.h>\n#endif\n#include <iostream>')
+        main_text=main_text.replace('int main(int argc, char **argv)\n{','int main(int argc, char **argv)\n{\n#if defined(__ANDROID__)\n    prctl(PR_SET_PDEATHSIG, SIGTERM);\n    if (getppid() == 1) return 1;\n#endif')
+        main.write_text('// Print Optimizer adaptation, 2026-10-30: stop with parent app.\n'+main_text)
     cmake=source/'CMakeLists.txt';original=cmake.read_text()
     text=original.replace('if (UNIX)\n','if (UNIX AND NOT ANDROID)\n').replace('if(NOT APPLE AND NOT WIN32)\n','if(NOT APPLE AND NOT WIN32 AND NOT ANDROID)\n')
     cmake.write_text(text)
