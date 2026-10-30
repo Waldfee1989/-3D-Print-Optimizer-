@@ -164,7 +164,7 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
       final faces = parts.fold<int>(0,(a,p) => a+p.part.vertices.length~/9)+part.vertices.length~/9;
       if (84+faces*50 > 100*1024*1024) throw const FormatException('Alle Teile zusammen überschreiten 100 MB als STL.');
       setState(() => addPart(part,1));
-    } catch (_) { if (mounted) setState(() => error = 'Datei konnte nicht hinzugefügt werden. Größe oder Format prüfen.'); }
+    } catch (e) { if (mounted) setState(() => error = e is FormatException ? e.message : 'Datei konnte nicht hinzugefügt werden. Größe oder Format prüfen.'); }
     finally { if (mounted) setState(() => busy = false); }
   }
   void change(PlatePlacement next) => changeAt(selected,next);

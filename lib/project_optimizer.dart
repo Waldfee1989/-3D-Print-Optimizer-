@@ -291,7 +291,7 @@ class ProjectRecommendation extends StatelessWidget {
     return Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
       crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [Icon(Icons.tune, color: Theme.of(context).colorScheme.primary),
-          const SizedBox(width: 10), Text('Deine Einstellungen', style: Theme.of(context).textTheme.titleLarge)]),
+          const SizedBox(width: 10), Expanded(child: Text('Deine Einstellungen', style: Theme.of(context).textTheme.titleLarge))]),
         const SizedBox(height: 12),
         for (final row in rows.entries) Padding(
           padding: const EdgeInsets.symmetric(vertical: 7),
