@@ -46,7 +46,7 @@ def build(output, android=False, abi='arm64-v8a', jobs=2):
     text=original.replace('if (UNIX)\n','if (UNIX AND NOT ANDROID)\n').replace('if(NOT APPLE AND NOT WIN32)\n','if(NOT APPLE AND NOT WIN32 AND NOT ANDROID)\n')
     cmake.write_text(text)
     (output/'platform-patch.json').write_text(json.dumps({'upstream':ENGINE,'replacements':[
-      ['if (UNIX)','if (UNIX AND NOT ANDROID)'],['if(NOT APPLE AND NOT WIN32)','if(NOT APPLE AND NOT WIN32 AND NOT ANDROID)']]}))
+      ['src/utils/math.h','include cstdint'],['src/utils/getpath.cpp','size buffer including terminator'],['if (UNIX)','if (UNIX AND NOT ANDROID)'],['if(NOT APPLE AND NOT WIN32)','if(NOT APPLE AND NOT WIN32 AND NOT ANDROID)']]}))
     flags=['cmake','-S',str(source),'-B',str(output/'build'),'-DCMAKE_BUILD_TYPE=Release','-DENABLE_ARCUS=OFF','-DENABLE_OPENMP=OFF','-DBUILD_TESTS=OFF',
       '-DENABLE_MORE_COMPILER_OPTIMIZATION_FLAGS=OFF','-DCMAKE_POSITION_INDEPENDENT_CODE=ON','-DCURA_ENGINE_VERSION=4.13.1-optimizer','-DStb_INCLUDE_DIRS='+str(deps)]
     if android:

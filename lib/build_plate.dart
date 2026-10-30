@@ -17,10 +17,12 @@ import 'plate_geometry.dart';
 import 'workspace_history.dart';
 import 'studio_project.dart';
 import 'project_optimizer.dart';
+import 'local_slicer.dart';
+import 'slicer_page.dart';
 export 'plate_geometry.dart';
 
 class BuildPlatePage extends StatefulWidget {
-  const BuildPlatePage({super.key,required this.pickPart,this.initialPart,this.initialParts = const [],this.initialScale = 1,this.bed = const PrinterBed(250,250,250),this.printer = 'Anycubic Kobra S1',this.slicer='Anycubic Slicer Next',this.nozzle='0.4',this.project,this.repository});
+  const BuildPlatePage({super.key,required this.pickPart,this.initialPart,this.initialParts = const [],this.initialScale = 1,this.bed = const PrinterBed(250,250,250),this.printer = 'Anycubic Kobra S1',this.slicer='Anycubic Slicer Next',this.nozzle='0.4',this.project,this.repository,this.openSettings=false});
   final Future<PlatePart?> Function() pickPart;
   final PlatePart? initialPart;
   final List<PlatePart> initialParts;
@@ -29,6 +31,7 @@ class BuildPlatePage extends StatefulWidget {
   final String printer,slicer,nozzle;
   final StudioProject? project;
   final StudioProjectRepository? repository;
+  final bool openSettings;
   @override State<BuildPlatePage> createState() => _BuildPlatePageState();
 }
 class _BuildPlatePageState extends State<BuildPlatePage> {
@@ -73,7 +76,9 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
   Future<void> editRecipe()async{
     final p=recipe??PrintProject(id:projectId,fileName:projectName,dimensions:'${parts.length} Teile',printer:activePrinter,slicer:activeSlicer,
       nozzle:activeNozzle,bed:activeBed,supportStatus:'Im Slicer prüfen',supportReason:'Stützen werden für die gesamte Druckplatte berechnet.');
-    final value=await Navigator.push<PrintProject>(context,MaterialPageRoute(builder:(_)=>ProjectOptimizerPage(project:p,returnProject:true)));
+    final value=await Navigator.push<PrintProject>(context,MaterialPageRoute(builder:(_)=>ProjectOptimizerPage(project:p,returnProject:true,onProjectSaved:(updated)async{
+      await repository.save(currentProject().copy(recipe:updated));if(mounted)setState(()=>recipe=updated);
+    })));
     if(value!=null&&mounted)setState(()=>recipe=value);
   }
   late double bedWidth = activeBed.width,bedDepth = activeBed.depth;
@@ -86,6 +91,7 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
     if(widget.project!=null){parts=List.of(widget.project!.parts);recipe=widget.project!.recipe;selected=parts.isEmpty?-1:0;for(final p in parts){unawaited(thumbnail(p));}}
     if (widget.initialPart != null) addPart(widget.initialPart!,widget.initialScale);
     for (final part in widget.initialParts) { addPart(part,1); }
+    if(widget.openSettings)WidgetsBinding.instance.addPostFrameCallback((_){if(mounted)editRecipe();});
   }
   void addPart(PlatePart part,double scale) {
     while(parts.any((p)=>p.id=='$counter')){counter++;}
@@ -209,6 +215,13 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
       Row(children:[IconButton(tooltip:'Rückgängig',onPressed:!busy&&history.canUndo?undo:null,icon:const Icon(Icons.undo)),
         IconButton(tooltip:'Wiederholen',onPressed:!busy&&history.canRedo?redo:null,icon:const Icon(Icons.redo)),
         const Spacer(),TextButton.icon(onPressed:busy?null:editRecipe,icon:const Icon(Icons.tune),label:const Text('Einstellungen'))]),
+      const SizedBox(height:8),
+      FilledButton.icon(onPressed:busy||parts.isEmpty||recipe==null||outOfBounds||!supportsLocalSlicer(currentProject())?null:
+        ()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>SlicerPage(project:currentProject()))),
+        icon:const Icon(Icons.layers_outlined),label:const Text('G-Code erstellen')),
+      if(recipe==null)const Padding(padding:EdgeInsets.symmetric(vertical:8),child:Text('Zuerst unter Einstellungen die Fragen zum Modell beantworten.')),
+      if(!supportsLocalSlicer(currentProject()))const Text('Lokaler Slicer zunächst für Kobra S1 mit 0,4-mm-Düse. Andere Profile folgen.'),
+      const SizedBox(height:8),
       const Text('Teil antippen und verschieben. Weitere Datei oben mit + hinzufügen.'),
       const SizedBox(height: 12),
       FilledButton.icon(onPressed: busy || parts.isEmpty ? null : align,icon: const Icon(Icons.auto_fix_high),label: const Text('Automatisch ausrichten')),

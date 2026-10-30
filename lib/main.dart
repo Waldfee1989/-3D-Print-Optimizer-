@@ -26,12 +26,13 @@ import 'help_chat.dart';
 import 'model_cut.dart';
 import 'app_design.dart';
 import 'studio_projects_page.dart';
+import 'studio_project.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  LicenseRegistry.addLicense(() async* { yield LicenseEntryWithLineBreaks(['Manifold'],await rootBundle.loadString('assets/licenses/Manifold.txt')); });
+  LicenseRegistry.addLicense(() async* { yield LicenseEntryWithLineBreaks(['Manifold'],await rootBundle.loadString('assets/licenses/Manifold.txt'));for(final name in ['CuraEngine','Cura']){yield LicenseEntryWithLineBreaks([name],await rootBundle.loadString('assets/licenses/$name.txt'));} });
   runApp(const OptimizerApp());
 }
 
@@ -566,18 +567,25 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
     finally { if (mounted) setState(() => loading = false); }
   }
 
+  Future<void> openWorkspace()async{
+    final m=mesh,bed=printerBed;if(m==null||bed==null)return;
+    final name=fileName??'Modell';
+    final part=PlatePart(name:name,vertices:m.renderVertices,unitScale:m.radius,width:m.size.x,depth:m.size.y,height:m.size.z);
+    final recipe=PrintProject(id:projectId,fileName:name,
+      dimensions:'${(m.size.x*modelScale).toStringAsFixed(2)} × ${(m.size.y*modelScale).toStringAsFixed(2)} × ${(m.size.z*modelScale).toStringAsFixed(2)} mm',
+      bed:bed,modelScale:modelScale,orientation:m.printAxis==0?'Wie in der Datei':'Optimiert · angepasste STL verwenden',
+      printer:widget.printer,slicer:widget.slicer,nozzle:widget.nozzle,priority:widget.quality,supportStatus:m.supports.status,supportReason:m.supports.reason);
+    final project=StudioProject(id:projectId,name:name,printer:widget.printer,slicer:widget.slicer,nozzle:widget.nozzle,bed:bed,
+      parts:[PlatePlacement(id:'0',part:part,x:bed.width/2,y:bed.depth/2,scale:modelScale)],recipe:recipe);
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:pickPlatePart,project:project,openSettings:true)));
+  }
+
   @override Widget build(BuildContext context) {
     final m = mesh;
     return Scaffold(
       appBar: AppBar(title: const Text('Modell'), actions: [
         TextButton(onPressed: m == null || loading ? null : saveModel, child: const Text('Datei speichern')),
-        TextButton(onPressed: m == null || loading ? null : () => Navigator.push(context,
-          MaterialPageRoute(builder: (_) => ProjectOptimizerPage(project: PrintProject(
-            id: projectId, fileName: fileName ?? 'Modell',
-            dimensions: '${(m.size.x*modelScale).toStringAsFixed(2)} × ${(m.size.y*modelScale).toStringAsFixed(2)} × ${(m.size.z*modelScale).toStringAsFixed(2)} mm',
-            bed: printerBed,modelScale: modelScale, orientation: m.printAxis == 0 ? 'Wie in der Datei' : 'Optimiert · angepasste STL verwenden',
-            printer: widget.printer, slicer: widget.slicer, nozzle: widget.nozzle,
-            priority: widget.quality, supportStatus: m.supports.status, supportReason: m.supports.reason)))), child: const Text('OK')),
+        TextButton(onPressed:m==null||loading||printerBed==null?null:openWorkspace,child:const Text('OK')),
       ]),
       body: SafeArea(top: false, child: ListView(padding: const EdgeInsets.all(16), children: [
         FilledButton.icon(onPressed: loading ? null : openModel,

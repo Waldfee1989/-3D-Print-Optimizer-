@@ -66,9 +66,10 @@ Future<void> savePrintProject(PrintProject project) async {
 }
 
 class ProjectOptimizerPage extends StatefulWidget {
-  const ProjectOptimizerPage({super.key, required this.project, this.showResult = false,this.returnProject=false});
+  const ProjectOptimizerPage({super.key, required this.project, this.showResult = false,this.returnProject=false,this.onProjectSaved});
   final PrintProject project;
   final bool showResult,returnProject;
+  final Future<void> Function(PrintProject)? onProjectSaved;
   @override State<ProjectOptimizerPage> createState() => _ProjectOptimizerPageState();
 }
 
@@ -105,6 +106,7 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
   Future<void> finish() async {
     setState(() { saving = true; error = null; });
     try {
+      await widget.onProjectSaved?.call(current);
       await savePrintProject(current);
       if (mounted) setState(() => result = true);
     } catch (_) {

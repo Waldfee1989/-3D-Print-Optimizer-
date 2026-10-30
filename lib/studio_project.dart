@@ -50,34 +50,65 @@ Uint8List encodeStudioProject(StudioProject project){
 
 // Check declared expanded sizes before any decompression. This format uses ZIP32
 // only; no paths are ever extracted to the filesystem.
-void validateProjectZip(Uint8List bytes){
+class _ProjectMember {
+  const _ProjectMember(this.name,this.start,this.compressed,this.size,this.method,this.crc);
+  final String name;final int start,compressed,size,method,crc;
+}
+class _LimitedBytes extends ByteConversionSink {
+  _LimitedBytes(this.maximum);final int maximum;final builder=BytesBuilder();int count=0;
+  @override void add(List<int> chunk){count+=chunk.length;if(count>maximum)throw const FormatException('Entpackte Datei ist größer als angegeben.');builder.add(chunk);}
+  @override void close(){}
+}
+final _crcTable=List<int>.generate(256,(i){var v=i;for(var k=0;k<8;k++){v=(v&1)==1?0xedb88320^(v>>>1):v>>>1;}return v;});
+int _crc32(List<int> bytes){var crc=0xffffffff;for(final value in bytes){crc=_crcTable[(crc^value)&255]^(crc>>>8);}return (crc^0xffffffff)&0xffffffff;}
+List<_ProjectMember> validateProjectZip(Uint8List bytes){
   if(bytes.length<22||bytes.length>maxProjectBytes)throw const FormatException('Ungültige Projektgröße.');
   final data=ByteData.sublistView(bytes);var end=-1;
   for(var i=bytes.length-22;i>=math.max(0,bytes.length-65557);i--){
-    if(data.getUint32(i,Endian.little)==0x06054b50){end=i;break;}
+    if(data.getUint32(i,Endian.little)==0x06054b50&&i+22+data.getUint16(i+20,Endian.little)==bytes.length){end=i;break;}
   }
   if(end<0||data.getUint16(end+4,Endian.little)!=0||data.getUint16(end+6,Endian.little)!=0)throw const FormatException('Kein unterstütztes Projektarchiv.');
   final count=data.getUint16(end+10,Endian.little),start=data.getUint32(end+16,Endian.little);
-  if(count<2||count>65||start>=end)throw const FormatException('Ungültiger Projektinhalt.');
-  var offset=start,total=0;final names=<String>{};
+  if(count<2||count>65||start>=end||count!=data.getUint16(end+8,Endian.little))throw const FormatException('Ungültiger Projektinhalt.');
+  var offset=start,total=0;final names=<String>{},members=<_ProjectMember>[];
   for(var i=0;i<count;i++){
     if(offset+46>end||data.getUint32(offset,Endian.little)!=0x02014b50)throw const FormatException('Beschädigtes Projektarchiv.');
-    final size=data.getUint32(offset+24,Endian.little),nameLength=data.getUint16(offset+28,Endian.little);
+    final size=data.getUint32(offset+24,Endian.little),compressed=data.getUint32(offset+20,Endian.little),nameLength=data.getUint16(offset+28,Endian.little);
     final next=offset+46+nameLength+data.getUint16(offset+30,Endian.little)+data.getUint16(offset+32,Endian.little);
     if(next>end||size==0xffffffff||size>maxProjectBytes)throw const FormatException('Projektdatei ist zu groß.');
     final name=utf8.decode(bytes.sublist(offset+46,offset+46+nameLength));
-    if(name.startsWith('/')||name.contains('\\')||name.split('/').contains('..')||!names.add(name))throw const FormatException('Ungültiger Projektpfad.');
+    if((name!='manifest.json'&&!RegExp(r'^geometry/[0-9]+\.f32$').hasMatch(name))||!names.add(name))throw const FormatException('Ungültiger Projektpfad.');
     if(name=='manifest.json'&&size>1024*1024)throw const FormatException('Projektbeschreibung ist zu groß.');
-    total+=size;if(total>maxProjectBytes)throw const FormatException('Entpacktes Projekt ist zu groß.');offset=next;
+    total+=size;if(total>maxProjectBytes)throw const FormatException('Entpacktes Projekt ist zu groß.');
+    final local=data.getUint32(offset+42,Endian.little),method=data.getUint16(offset+10,Endian.little),flags=data.getUint16(offset+8,Endian.little);
+    if((flags&1)!=0||![0,8].contains(method)||local+30>start||data.getUint32(local,Endian.little)!=0x04034b50)throw const FormatException('Nicht unterstützte ZIP-Datei.');
+    final localName=data.getUint16(local+26,Endian.little),body=local+30+localName+data.getUint16(local+28,Endian.little);
+    if(body+compressed>start||data.getUint16(local+8,Endian.little)!=method||
+      utf8.decode(bytes.sublist(local+30,local+30+localName))!=name)throw const FormatException('Ungültige ZIP-Dateigrenzen.');
+    members.add(_ProjectMember(name,body,compressed,size,method,data.getUint32(offset+16,Endian.little)));offset=next;
   }
   if(!names.contains('manifest.json'))throw const FormatException('Projektbeschreibung fehlt.');
+  return members;
+}
+Map<String,Uint8List> _decodeProjectZip(Uint8List bytes){
+  final files=<String,Uint8List>{};
+  for(final member in validateProjectZip(bytes)){
+    final compressed=Uint8List.sublistView(bytes,member.start,member.start+member.compressed);
+    Uint8List content;
+    if(member.method==0){content=Uint8List.fromList(compressed);}
+    else{
+      final sink=_LimitedBytes(member.size);
+      final decoder=ZLibDecoder(raw:true).startChunkedConversion(sink);decoder.add(compressed);decoder.close();content=sink.builder.takeBytes();
+    }
+    if(content.length!=member.size||_crc32(content)!=member.crc)throw const FormatException('Projektdatei ist beschädigt.');
+    files[member.name]=content;
+  }
+  return files;
 }
 StudioProject decodeStudioProject(Uint8List bytes){
-  validateProjectZip(bytes);
-  final archive=ZipDecoder().decodeBytes(bytes);
-  final files={for(final file in archive)file.name:file};
+  final files=_decodeProjectZip(bytes);
   final manifest=files['manifest.json']!;
-  final raw=jsonDecode(utf8.decode(manifest.content as List<int>));
+  final raw=jsonDecode(utf8.decode(manifest));
   if(raw is! Map||raw['format']!='print-optimizer-project'||raw['version']!=1)throw const FormatException('Unbekannte Projektversion.');
   final map=Map<String,dynamic>.from(raw);
   String text(String key){final value=map[key];if(value is! String||value.isEmpty||value.length>500)throw const FormatException('Ungültige Projektbeschreibung.');return value;}
@@ -89,9 +120,8 @@ StudioProject decodeStudioProject(Uint8List bytes){
     final row=Map<String,dynamic>.from(rows[n] as Map);
     final path=row['geometry'];if(path!='geometry/$n.f32'||!files.containsKey(path))throw const FormatException('Modelldaten fehlen.');
     final file=files[path]!;
-    if(file.size==0||file.size%36!=0)throw const FormatException('Ungültige Modelldaten.');
-    final data=Uint8List.fromList(file.content as List<int>);
-    if(data.length!=file.size)throw const FormatException('Unvollständige Modelldaten.');
+    if(file.isEmpty||file.length%36!=0)throw const FormatException('Ungültige Modelldaten.');
+    final data=file;
     final vertices=Float32List(data.length~/4),reader=ByteData.sublistView(data);
     final minimum=[double.infinity,double.infinity,double.infinity],maximum=[double.negativeInfinity,double.negativeInfinity,double.negativeInfinity];
     for(var i=0;i<vertices.length;i++){

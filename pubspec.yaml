@@ -27,3 +27,9 @@ flutter:
     - assets/licenses/Cura.txt
     - assets/slicer/defaults.json
 
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
