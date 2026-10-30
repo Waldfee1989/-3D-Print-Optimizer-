@@ -17,6 +17,9 @@ void main(){
     await tester.tap(find.text('Teilen'));await tester.pumpAndSettle();
     expect(saved!.connection,2);expect(saved!.diameter,10);expect(saved!.length,8);expect(saved!.pitch,2);
     await tester.tap(find.text('Öffnen'));await tester.pumpAndSettle();
+    final play=find.widgetWithText(TextFormField,'Spiel je Seite');
+    await reveal(tester,play);await tester.enterText(play,'ungueltig');
+    await reveal(tester,find.text('Ohne Verbindung'));
     await tester.tap(find.text('Ohne Verbindung'));await tester.pumpAndSettle();
     expect(find.byType(TextFormField),findsNothing);
     await tester.tap(find.text('Teilen'));await tester.pumpAndSettle();expect(saved!.connection,0);
@@ -30,6 +33,9 @@ void main(){
       onPressed:()async{result=await showDialog<CutSettings>(context:context,builder:(_)=>CutDialog(part,1,null));},child:const Text('Öffnen'))))));
     await tester.tap(find.text('Öffnen'));await tester.pumpAndSettle();
     await tester.tap(find.text('Klickverschluss'));await tester.pumpAndSettle();
+    tester.view.viewInsets=const FakeViewPadding(bottom:300);addTearDown(tester.view.resetViewInsets);
+    await tester.pumpAndSettle();
+    expect(tester.getCenter(find.text('Teilen')).dy,lessThan(544));
     await tester.tap(find.text('Teilen'));await tester.pumpAndSettle();
     expect(result!.connection,3);expect(result!.diameter,6);expect(result!.length,10);
     expect(tester.takeException(),isNull);

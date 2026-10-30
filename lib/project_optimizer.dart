@@ -142,6 +142,13 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
     final targetNozzle = surface == 'Sehr glatt' ? .2 : priority == 'Schneller Druck' || functional || highLoad ? .6 : .4;
     final selectedDiameter = double.tryParse(selectedNozzle) ?? .4;
     final proposal = candidate != null && (candidate.diameter-targetNozzle).abs() < (selectedDiameter-targetNozzle).abs()-1e-6 ? candidate : null;
+    Widget requirement(String title,IconData icon,bool value,ValueChanged<bool> change)=>Card(
+      color:value?const Color(0xfff0ebff):Colors.white,
+      child:SwitchListTile(contentPadding:const EdgeInsets.symmetric(horizontal:14,vertical:4),
+        secondary:Container(padding:const EdgeInsets.all(9),decoration:BoxDecoration(color:value?Colors.white:const Color(0xfff5f3fa),
+          borderRadius:BorderRadius.circular(12)),child:Icon(icon,color:studioPurple,size:22)),
+        title:Text(title,style:const TextStyle(fontSize:14,fontWeight:FontWeight.w600)),value:value,
+        onChanged:saving?null:change));
     return Scaffold(appBar: AppBar(title: Text(result ? 'Deine Druckempfehlung' : 'Was ist dir wichtig?'),
       actions: [IconButton(tooltip: 'Druckhilfe',icon: const Icon(Icons.chat_bubble_outline),
         onPressed: () => Navigator.push(context,MaterialPageRoute(builder: (_) => HelpChatPage(project: current)))),
@@ -155,8 +162,14 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
           ]),
       ]),
       body: SafeArea(top: false, child: ListView(padding: const EdgeInsets.all(16), children: [
-        Text(p.fileName, style: Theme.of(context).textTheme.titleLarge),
-        Text(p.dimensions),
+        Card(child:Padding(padding:const EdgeInsets.all(16),child:Row(children:[
+          Container(padding:const EdgeInsets.all(12),decoration:BoxDecoration(color:const Color(0xffeee8ff),borderRadius:BorderRadius.circular(16)),
+            child:const Icon(Icons.view_in_ar_rounded,color:studioPurple)),const SizedBox(width:14),
+          Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+            Text(p.fileName,style:const TextStyle(fontWeight:FontWeight.w800,fontSize:17)),
+            const SizedBox(height:4),Text(p.dimensions,style:const TextStyle(fontSize:12,color:studioMuted)),
+          ])),
+        ]))),
         const SizedBox(height: 16),
         if (result) ...[
           if (proposal != null && proposal.diameter != double.tryParse(selectedNozzle)) Card(child: Padding(
@@ -173,17 +186,13 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
             child: const Text('Antworten ändern')),
           const Text('Gespeichert in „Meine Druckprojekte“. Originaldatei bleibt unverändert.'),
         ] else ...[
-          const Text('Beantworte die Fragen für dieses Modell und tippe oben auf Speichern. Danach erhältst du Material und Druckeinstellungen zusammen.'),
-          SwitchListTile(title: const Text('Mechanisches Teil / Gebrauchsteil'), value: functional,
-            onChanged: saving ? null : (v) => setState(() => functional = v)),
-          SwitchListTile(title: const Text('Dauerhaft draußen / in der Sonne'), value: outdoor,
-            onChanged: saving ? null : (v) => setState(() => outdoor = v)),
-          SwitchListTile(title: const Text('Hohe mechanische Belastung'), value: highLoad,
-            onChanged: saving ? null : (v) => setState(() => highLoad = v)),
-          SwitchListTile(title: const Text('Muss weich oder biegsam sein'), value: flexible,
-            onChanged: saving ? null : (v) => setState(() => flexible = v)),
-          SwitchListTile(title: const Text('Erhöhte Wärme, z. B. im Auto'), value: warm,
-            onChanged: saving ? null : (v) => setState(() => warm = v)),
+          const StudioHeading('Was soll dein Teil können?',subtitle:'Wähle, was auf dein Modell zutrifft.'),
+          requirement('Mechanisches Teil / Gebrauchsteil',Icons.build_outlined,functional,(v)=>setState(()=>functional=v)),
+          requirement('Dauerhaft draußen / in der Sonne',Icons.wb_sunny_outlined,outdoor,(v)=>setState(()=>outdoor=v)),
+          requirement('Hohe mechanische Belastung',Icons.fitness_center_outlined,highLoad,(v)=>setState(()=>highLoad=v)),
+          requirement('Muss weich oder biegsam sein',Icons.gesture_outlined,flexible,(v)=>setState(()=>flexible=v)),
+          requirement('Erhöhte Wärme, z. B. im Auto',Icons.thermostat_outlined,warm,(v)=>setState(()=>warm=v)),
+          const StudioHeading('Dein Druckziel'),
           DropdownButtonFormField<String>(isExpanded: true,initialValue: selectedNozzle,decoration: const InputDecoration(labelText: 'Düse für diese Empfehlung'),
             items: available.map((d) => DropdownMenuItem(value: d,child: Text('$d mm'))).toList(),
             onChanged: saving ? null : (v) => setState(() => selectedNozzle = v ?? selectedNozzle)),

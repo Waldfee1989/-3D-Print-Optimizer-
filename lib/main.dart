@@ -750,6 +750,6 @@ class _SurfacePreviewState extends State<_SurfacePreview> {
         filterQuality: FilterQuality.medium),
       if (_image == null && _error == null)
         const Center(child: CircularProgressIndicator()),
-      if (_error != null) Center(child: Text(_error!)),
+      if (_error != null) Center(child: Text(_error!,style:const TextStyle(color:Colors.white70))),
     ]));
 }

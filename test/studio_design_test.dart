@@ -20,7 +20,7 @@ void main(){
       await loader.load();
     }
   });
-  for(final size in [const Size(390,844),const Size(840,900)]){
+  for(final size in [const Size(320,740),const Size(390,844),const Size(840,900)]){
     testWidgets('Studio layout at ${size.width} keeps primary action and tools usable',(tester)async{
       SharedPreferences.setMockInitialValues({});
       tester.view.physicalSize=size;tester.view.devicePixelRatio=1;
