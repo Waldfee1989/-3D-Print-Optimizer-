@@ -13,6 +13,7 @@ on:
       - connections-studio
       - integrated-slicer
       - voice-adapter
+      - photo-web-search
       - project-optimizer
 
 permissions:

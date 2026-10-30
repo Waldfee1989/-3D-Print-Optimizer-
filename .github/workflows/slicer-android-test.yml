@@ -1,7 +1,7 @@
 name: Slicer auf Android pruefen
 on:
   push:
-    branches: [integrated-slicer, voice-adapter]
+    branches: [integrated-slicer, voice-adapter, photo-web-search]
     paths: ['lib/**','scripts/**','integration_test/**','test_driver/**','pubspec.yaml','.github/workflows/slicer-android-test.yml']
   workflow_dispatch:
 permissions:

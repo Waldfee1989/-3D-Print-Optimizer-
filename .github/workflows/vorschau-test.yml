@@ -15,6 +15,7 @@ on:
       - connections-studio
       - integrated-slicer
       - voice-adapter
+      - photo-web-search
     paths:
       - 'lib/**'
       - 'native/**'

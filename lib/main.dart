@@ -28,6 +28,8 @@ import 'app_design.dart';
 import 'studio_projects_page.dart';
 import 'studio_project.dart';
 import 'adapter_page.dart';
+import 'adapter_request.dart';
+import 'photo_measure_page.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -223,13 +225,18 @@ class _HomePageState extends State<HomePage> {
   void openLowStock() => Navigator.push(context,MaterialPageRoute(builder: (_) => LowStockPage(stock: stock,
     threshold: lowStockThreshold,onThresholdChanged: (value) { if (mounted) setState(() => lowStockThreshold = value); })));
 
-  Future<void> openAdapter()async{
+  Future<void> openAdapter({AdapterDraft? initialDraft})async{
     if(bed==null){await setup();if(!mounted||bed==null)return;}
-    final part=await Navigator.push<PlatePart>(context,MaterialPageRoute(builder:(_)=>const AdapterPage()));
+    final part=await Navigator.push<PlatePart>(context,MaterialPageRoute(builder:(_)=>AdapterPage(initialDraft:initialDraft)));
     if(part==null||!mounted)return;
     final project=StudioProject(id:DateTime.now().microsecondsSinceEpoch.toString(),name:part.name,
       printer:printer,slicer:slicer,nozzle:nozzle,bed:bed!,parts:[PlatePlacement(id:'0',part:part,x:bed!.width/2,y:bed!.depth/2)]);
     await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:pickPlatePart,project:project,openSettings:true)));
+  }
+
+  Future<void> openPhoto()async{
+    final draft=await Navigator.push<AdapterDraft>(context,MaterialPageRoute(builder:(_)=>const PhotoMeasurePage()));
+    if(draft!=null&&mounted)await openAdapter(initialDraft:draft);
   }
 
   @override Widget build(BuildContext context) => PopScope(
@@ -250,7 +257,10 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height:8),
           StudioHero(onOpen:openModel),
           const SizedBox(height:10),
-          OutlinedButton.icon(onPressed:openAdapter,icon:const Icon(Icons.mic_none),label:const Text('Adapter nach Maß erstellen')),
+          Row(children:[
+            Expanded(child:OutlinedButton.icon(onPressed:()=>openAdapter(),icon:const Icon(Icons.mic_none),label:const Text('Adapter'))),
+            const SizedBox(width:10),Expanded(child:OutlinedButton.icon(onPressed:openPhoto,icon:const Icon(Icons.photo_size_select_large_outlined),label:const Text('Fotomaße'))),
+          ]),
           const StudioHeading('Deine Werkzeuge',subtitle:'Vorbereiten, organisieren, loslegen.'),
           StudioTools(children:[
             StudioTool(title:'Druckplatte',subtitle:'Mehrere Teile zusammenstellen',icon:Icons.dashboard_customize_outlined,
