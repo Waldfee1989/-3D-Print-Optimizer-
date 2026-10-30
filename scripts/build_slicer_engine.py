@@ -33,6 +33,8 @@ def build(output, android=False, abi='arm64-v8a', jobs=2):
     unpack('Ultimaker/CuraEngine',ENGINE,source)
     unpack('nothings/stb',STB,deps/'stb')
     # Only platform/build adaptation; keep a machine-readable, published patch.
+    header=source/'src/utils/math.h'
+    if '#include <cstdint>' not in header.read_text(): header.write_text('#include <cstdint>\n'+header.read_text())
     cmake=source/'CMakeLists.txt';original=cmake.read_text()
     text=original.replace('if (UNIX)\n','if (UNIX AND NOT ANDROID)\n').replace('if(NOT APPLE AND NOT WIN32)\n','if(NOT APPLE AND NOT WIN32 AND NOT ANDROID)\n')
     cmake.write_text(text)
