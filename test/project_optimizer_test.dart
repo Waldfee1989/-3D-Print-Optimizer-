@@ -7,7 +7,7 @@ import 'package:print_optimizer/project_optimizer.dart';
 PrintProject sample(String id, {bool outdoor = false, String nozzle = '0.4'}) =>
   PrintProject(id: id, fileName: 'teil.stl', dimensions: '20 × 30 × 10 mm',
     printer: 'Anycubic Kobra S1', slicer: 'Anycubic Slicer Next', nozzle: nozzle,
-    outdoor: outdoor);
+    outdoor: outdoor, supportStatus: 'Stützen empfohlen', supportReason: 'Überhang erkannt.');
 
 void main() {
   test('Projects with the same filename stay separate and edits replace only the chosen project', () async {
@@ -17,6 +17,7 @@ void main() {
     await savePrintProject(sample('one', outdoor: true));
     final rows = await loadPrintProjects();
     expect(rows.length, 2);
+    expect(rows.first.supportStatus, 'Stützen empfohlen');
     expect(rows.singleWhere((p) => p.id == 'one').advice.material, 'ASA');
     expect(rows.singleWhere((p) => p.id == 'two').advice.material, 'PLA');
     final prefs = await SharedPreferences.getInstance();

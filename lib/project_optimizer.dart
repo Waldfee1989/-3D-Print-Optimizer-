@@ -10,10 +10,11 @@ class PrintProject {
     required this.printer, required this.slicer, required this.nozzle,
     this.functional = false, this.outdoor = false, this.highLoad = false,
     this.flexible = false, this.warm = false, this.surface = 'Sehr glatt',
-    this.priority = 'Maximale Qualität'});
+    this.priority = 'Maximale Qualität', this.supportStatus = 'Im Slicer prüfen',
+    this.supportReason = 'Keine Geometrieprüfung gespeichert.'});
   final String id, fileName, dimensions, printer, slicer, nozzle;
   final bool functional, outdoor, highLoad, flexible, warm;
-  final String surface, priority;
+  final String surface, priority, supportStatus, supportReason;
   MaterialAdvice get advice => recommendMaterial(functional: functional,
     outdoor: outdoor, highLoad: highLoad, flexible: flexible, warm: warm,
     quality: surface == 'Sehr glatt' ? 'Maximale Qualität' : priority);
@@ -21,7 +22,7 @@ class PrintProject {
     'id': id, 'fileName': fileName, 'dimensions': dimensions, 'printer': printer,
     'slicer': slicer, 'nozzle': nozzle, 'functional': functional, 'outdoor': outdoor,
     'highLoad': highLoad, 'flexible': flexible, 'warm': warm,
-    'surface': surface, 'priority': priority,
+    'surface': surface, 'priority': priority, 'supportStatus': supportStatus, 'supportReason': supportReason,
   };
   factory PrintProject.fromJson(Map<String, dynamic> data) => PrintProject(
     id: data['id'] as String, fileName: data['fileName'] as String,
@@ -30,7 +31,8 @@ class PrintProject {
     functional: data['functional'] == true, outdoor: data['outdoor'] == true,
     highLoad: data['highLoad'] == true, flexible: data['flexible'] == true,
     warm: data['warm'] == true, surface: data['surface'] as String,
-    priority: data['priority'] as String);
+    priority: data['priority'] as String, supportStatus: data['supportStatus'] as String? ?? 'Im Slicer prüfen',
+    supportReason: data['supportReason'] as String? ?? 'Keine Geometrieprüfung gespeichert.');
 }
 
 Future<List<PrintProject>> loadPrintProjects() async {
@@ -72,7 +74,8 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
   PrintProject get current => PrintProject(id: widget.project.id,
     fileName: widget.project.fileName, dimensions: widget.project.dimensions,
     printer: widget.project.printer, slicer: widget.project.slicer,
-    nozzle: widget.project.nozzle, functional: functional, outdoor: outdoor,
+    nozzle: widget.project.nozzle, supportStatus: widget.project.supportStatus,
+    supportReason: widget.project.supportReason, functional: functional, outdoor: outdoor,
     highLoad: highLoad, flexible: flexible, warm: warm, surface: surface, priority: priority);
   Future<void> finish() async {
     setState(() { saving = true; error = null; });
@@ -155,10 +158,13 @@ class ProjectRecommendation extends StatelessWidget {
           Text('Infill: ${a.infill} %'), Text('Außenwand: $speed'),
         ] else const Text('Für diese Düsengröße ein passendes Slicer-Profil verwenden. Die Zahlenwerte sind für 0,4 mm ausgelegt.'),
         const Text('Temperatur, Druckbett, Kühlung und weitere Geschwindigkeiten: Profil für das empfohlene Material und die konkrete Filamentrolle verwenden.'),
-        const Text('Stützstrukturen: Im Slicer nach Ausrichtung und Überhängen prüfen.'),
+        const SizedBox(height: 12),
+        Text('Stützstrukturen: ${p.supportStatus}', style: Theme.of(context).textTheme.titleMedium),
+        Text(p.supportReason),
+        const Text('Gilt für die Ausrichtung der Datei. Vorschau-Drehung ändert die Druckausrichtung nicht. Bei anderer Ausrichtung im Slicer neu prüfen.'),
         const SizedBox(height: 12), Text(a.notes),
         const SizedBox(height: 12),
-        const Text('Dies sind passende Startwerte aus deinen Antworten. Die Modellgeometrie wird noch nicht auf Überhänge, Belastbarkeit oder Druckbarkeit analysiert. '
+        const Text('Dies sind passende Startwerte aus deinen Antworten. Die Überhangprüfung ist eine geometrische Einschätzung; sie ersetzt keine Slicer-Vorschau. Belastbarkeit und vollständige Druckbarkeit werden nicht berechnet. '
           'Im Slicer prüfen und bei Bedarf mit einem Probedruck abstimmen. Keine automatische Übertragung in den Slicer.'),
       ])));
   }

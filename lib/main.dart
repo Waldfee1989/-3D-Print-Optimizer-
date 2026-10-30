@@ -16,6 +16,7 @@ import 'app_updates.dart';
 import 'filament_inventory.dart';
 import 'filament_scanner.dart';
 import 'project_optimizer.dart';
+import 'support_analysis.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -304,7 +305,7 @@ class _HomePageState extends State<HomePage> {
           child:Text('Noch keine Filamentrollen vorhanden.')),
         const SizedBox(height:20),
         const Text('Weitere Funktionen folgen',style:TextStyle(fontSize:18,fontWeight:FontWeight.bold)),
-        const Text('Die Modellvorschau prüft Abmessungen, aber noch keine Überhänge, Gelenke oder automatische Ausrichtung. Farbwechseloptimierung, Online-Recherche, Cloud-Synchronisierung und Slicer-Export folgen.'),
+        const Text('Die Modellvorschau prüft Abmessungen und gibt bei geeigneten STL-Modellen einen Überhanghinweis. Gelenke und automatische Druckausrichtung werden noch nicht geprüft. Farbwechseloptimierung, Online-Recherche, Cloud-Synchronisierung und Slicer-Export folgen.'),
       ]),
   );
 }
@@ -326,6 +327,7 @@ class _Mesh {
   final List<_Triangle> faces;
   final _V3 minimum, maximum;
   final int totalFaces;
+  SupportAssessment supports = const SupportAssessment('Im Slicer prüfen', 'Noch nicht geprüft.');
   late final Float32List renderVertices = _normalizedVertices();
 
   Float32List _normalizedVertices() {
@@ -354,7 +356,7 @@ class _MeshReader {
   static _Mesh inBackground((String, Uint8List) input) {
     final parsed = fromBytes(input.$1, input.$2);
     // Prepare the render buffer on the worker too, before returning to the UI.
-    parsed.renderVertices;
+    parsed.supports = assessSupports(parsed.renderVertices, is3mf: input.$1.toLowerCase().endsWith('.3mf'));
     return parsed;
   }
 
@@ -465,6 +467,7 @@ class ModelPreviewPage extends StatefulWidget {
 class _ModelPreviewPageState extends State<ModelPreviewPage> {
   _Mesh? mesh;
   String? fileName, error;
+  String projectId = DateTime.now().microsecondsSinceEpoch.toString();
   bool loading = false;
   double angleX = 25, angleY = 30, zoom = 1;
   final Map<int, Offset> _touches = {};
@@ -529,7 +532,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
       }
       final parsed = await compute(_MeshReader.inBackground, (file.name, bytes));
       if (!mounted) return;
-      setState(() { mesh = parsed; fileName = file.name; angleX = 25; angleY = 30; zoom = 1; });
+      setState(() { mesh = parsed; fileName = file.name; projectId = DateTime.now().microsecondsSinceEpoch.toString(); angleX = 25; angleY = 30; zoom = 1; });
     } catch (e) {
       if (mounted) setState(() => error = 'Datei konnte nicht geöffnet werden: $e');
     } finally {
@@ -543,10 +546,10 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
       appBar: AppBar(title: const Text('3D-Modellvorschau'), actions: [
         TextButton(onPressed: m == null || loading ? null : () => Navigator.push(context,
           MaterialPageRoute(builder: (_) => ProjectOptimizerPage(project: PrintProject(
-            id: DateTime.now().microsecondsSinceEpoch.toString(), fileName: fileName ?? 'Modell',
+            id: projectId, fileName: fileName ?? 'Modell',
             dimensions: '${m.size.x.toStringAsFixed(1)} × ${m.size.y.toStringAsFixed(1)} × ${m.size.z.toStringAsFixed(1)} (Modellkoordinaten, normalerweise mm)',
             printer: widget.printer, slicer: widget.slicer, nozzle: widget.nozzle,
-            priority: widget.quality)))), child: const Text('OK')),
+            priority: widget.quality, supportStatus: m.supports.status, supportReason: m.supports.reason)))), child: const Text('OK')),
       ]),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         FilledButton.icon(onPressed: loading ? null : openModel,
@@ -603,11 +606,14 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
             '${m.size.x.toStringAsFixed(1)} × ${m.size.y.toStringAsFixed(1)} × '
             '${m.size.z.toStringAsFixed(1)}'),
           Text('Dreiecke: ${m.totalFaces}'),
+          Text('Stützen: ${m.supports.status}'),
+          Text(m.supports.reason),
+          const Text('Bewertung für die Dateiausrichtung. Drehen in der Vorschau ändert die Druckausrichtung nicht.'),
           const SizedBox(height: 12),
           const Text('Hinweis: Dies ist eine einfache drehbare Geometrievorschau. '
             'Bei 3MF werden Komponenten, Farbzuweisungen und Transformationen '
             'noch nicht vollständig ausgewertet. Die Ansicht verändert nicht '
-            'die Originaldatei. Druckbarkeit und Passgenauigkeit werden noch '
+            'die Originaldatei. Vollständige Druckbarkeit und Passgenauigkeit werden noch '
             'nicht automatisch geprüft.'),
         ] else if (!loading) ...[
           const SizedBox(height: 32),
