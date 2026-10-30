@@ -343,7 +343,9 @@ jobs:
               await reveal(tester,find.text('Ansicht zurücksetzen'));
               await tester.tap(find.text('Ansicht zurücksetzen'));
               await tester.pump();
+              await reveal(tester,find.text('Horizontal drehen: 30°'));
               expect(find.text('Horizontal drehen: 30°'), findsOneWidget);
+              await reveal(tester,find.text('Vertikal drehen: 25°'));
               expect(find.text('Vertikal drehen: 25°'), findsOneWidget);
               scroll.position.jumpTo(0);
               await tester.pump();

@@ -65,7 +65,7 @@ class _PrinterSetupPageState extends State<PrinterSetupPage> {
             width.text = bed?.width.toStringAsFixed(0) ?? ''; depth.text = bed?.depth.toStringAsFixed(0) ?? ''; height.text = bed?.height.toStringAsFixed(0) ?? '';
           }),
         const SizedBox(height: 16),
-        DropdownButtonFormField<String>(initialValue: slicer,decoration: const InputDecoration(labelText: 'Slicer'),
+        DropdownButtonFormField<String>(isExpanded: true,initialValue: slicer,decoration: const InputDecoration(labelText: 'Slicer'),
           items: ['Anycubic Slicer','Anycubic Slicer Next','OrcaSlicer','Anderer Slicer'].map((s) => DropdownMenuItem(value: s,child: Text(s))).toList(),
           onChanged: (v) => slicer = v ?? slicer),
         const SizedBox(height: 16),

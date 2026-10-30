@@ -99,7 +99,7 @@ class _NozzleEditorState extends State<_NozzleEditor> {
       Text(widget.existing?.printer ?? widget.printer),
       TextFormField(controller: diameter,decoration: const InputDecoration(labelText: 'Durchmesser in mm'),keyboardType: const TextInputType.numberWithOptions(decimal: true),
         validator: (v) { final n = double.tryParse((v ?? '').replaceAll(',','.')); return n == null || !n.isFinite || n < .1 || n > 2 ? '0,1 bis 2 mm eintragen.' : null; }),
-      const SizedBox(height: 12),DropdownButtonFormField<String>(initialValue: material,decoration: const InputDecoration(labelText: 'Düsenmaterial'),
+      const SizedBox(height: 12),DropdownButtonFormField<String>(isExpanded: true,initialValue: material,decoration: const InputDecoration(labelText: 'Düsenmaterial'),
         items: ['Messing','Gehärteter Stahl','Edelstahl','Andere','Unbekannt'].map((m) => DropdownMenuItem(value: m,child: Text(m))).toList(),onChanged: (v) => material = v ?? material),
       const SizedBox(height: 12),TextFormField(controller: quantity,decoration: const InputDecoration(labelText: 'Anzahl'),keyboardType: TextInputType.number,
         validator: (v) { final n = int.tryParse(v ?? ''); return n == null || n < 0 || n > 10000 ? 'Gültige Anzahl eintragen.' : null; }),

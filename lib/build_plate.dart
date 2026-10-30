@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'mesh_renderer.dart';
 import 'model_size_dialog.dart';
@@ -270,7 +271,7 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
                   child: RawImage(image: images[parts[i].id],fit: BoxFit.fill)))),
               Positioned(left: parts[i].bounds.left*pixelsPerMm,top: (bedDepth-parts[i].bounds.bottom)*pixelsPerMm,
                 width: math.max(16,parts[i].width*pixelsPerMm),height: math.max(16,parts[i].depth*pixelsPerMm),
-                child: GestureDetector(key: ValueKey('plate-hit-$i'),behavior: HitTestBehavior.opaque,
+                child: GestureDetector(key: ValueKey('plate-hit-$i'),dragStartBehavior: DragStartBehavior.down,behavior: HitTestBehavior.opaque,
                   onTap: () => setState(() => selected = i),
                   onPanStart: busy ? null : (_) => setState(() => selected = i),
                   onPanUpdate: busy ? null : (event) => changeAt(i,clamp(parts[i].copy(
@@ -308,7 +309,7 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
           final image = images.remove(old.id);
           if (image != null) WidgetsBinding.instance.addPostFrameCallback((_) => image.dispose());
         },icon: const Icon(Icons.close)))),
-      const Text('STL speichert Geometrie und Positionen, keine 3MF-Farben oder Materialzuweisungen. Vor dem Drucken im Slicer prüfen.'),
+      const Text('STL speichert Geometrie und Positionen, keine 3MF-Farben oder Materialzuweisungen. Verbindungspaare immer gleich skalieren. Vor dem Drucken im Slicer prüfen.'),
     ])));
   }
 }

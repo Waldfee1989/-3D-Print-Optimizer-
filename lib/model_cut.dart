@@ -61,7 +61,7 @@ class _CutDialogState extends State<_CutDialog> {
   @override Widget build(BuildContext context)=>AlertDialog(title:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
     const Text('Modell teilen'),FilledButton(onPressed:(){if(form.currentState!.validate())Navigator.pop(context,CutSettings(axis,fraction,pins,number(diameter.text),number(length.text),number(clearance.text)));},child:const Text('Teilen')),
   ]),content:SingleChildScrollView(child:Form(key:form,child:Column(mainAxisSize:MainAxisSize.min,children:[
-    DropdownButtonFormField<int>(initialValue:axis,decoration:const InputDecoration(labelText:'Schnittachse'),items:[for(var i=0;i<3;i++)DropdownMenuItem(value:i,child:Text(['X · Breite','Y · Tiefe','Z · Höhe'][i]))],onChanged:(v)=>setState(()=>axis=v!)),
+    DropdownButtonFormField<int>(isExpanded: true,initialValue:axis,decoration:const InputDecoration(labelText:'Schnittachse'),items:[for(var i=0;i<3;i++)DropdownMenuItem(value:i,child:Text(['X · Breite','Y · Tiefe','Z · Höhe'][i]))],onChanged:(v)=>setState(()=>axis=v!)),
     Text('Schnittposition: ${(fraction*100).toStringAsFixed(0)} %'),Slider(value:fraction,min:.1,max:.9,divisions:80,onChanged:(v)=>setState(()=>fraction=v)),
     SwitchListTile(title:const Text('Zwei Zapfen mit Gegenlöchern'),value:pins,onChanged:(v)=>setState(()=>pins=v)),
     for(final field in [(diameter,'Zapfendurchmesser in mm',2.0,30.0),(length,'Zapfenlänge in mm',2.0,30.0),(clearance,'Spiel je Seite in mm',.05,1.0)]) Padding(padding:const EdgeInsets.only(bottom:12),child:TextFormField(

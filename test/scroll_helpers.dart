@@ -8,7 +8,8 @@ Future<void> reveal(WidgetTester tester,Finder target) async {
   scroll.position.jumpTo(0);await tester.pump();
   for(var attempt=0;attempt<100;attempt++){
     if(target.evaluate().isNotEmpty){
-      await tester.ensureVisible(target);await tester.pumpAndSettle();
+      await tester.ensureVisible(target);await tester.pump();
+      await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds: 10)));await tester.pump();
       final rect=tester.getRect(target);
       final height=tester.view.physicalSize.height/tester.view.devicePixelRatio;
       if(rect.center.dy>=0&&rect.center.dy<height)return;

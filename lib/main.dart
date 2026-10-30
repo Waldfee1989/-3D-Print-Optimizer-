@@ -292,7 +292,7 @@ class _HomePageState extends State<HomePage> {
                 Text('$nozzle mm', style: TextStyle(color: Theme.of(context).colorScheme.primary))]),
               const SizedBox(height: 8), Text(slicer, style: const TextStyle(color: Color(0xffa8b5c9))),
               const SizedBox(height: 12),
-              DropdownButtonFormField<String>(initialValue: qualityMode,
+              DropdownButtonFormField<String>(isExpanded: true,initialValue: qualityMode,
                 decoration: const InputDecoration(labelText: 'Standard-Druckmodus'),
                 items: ['Maximale Qualität', 'Ausgewogen', 'Schneller Druck']
                   .map((mode) => DropdownMenuItem(value: mode, child: Text(mode))).toList(),
