@@ -443,9 +443,10 @@ class _MeshReader {
 
 class ModelPreviewPage extends StatefulWidget {
   const ModelPreviewPage({super.key, this.printer = 'Anycubic Kobra S1',
-    this.slicer = 'Anycubic Slicer Next', this.nozzle = '0.4', this.quality = 'Maximale Qualität',this.bed});
+    this.slicer = 'Anycubic Slicer Next', this.nozzle = '0.4', this.quality = 'Maximale Qualität',this.bed,this.projectRepository});
   final String printer, slicer, nozzle, quality;
   final PrinterBed? bed;
+  final StudioProjectRepository? projectRepository;
   @override State<ModelPreviewPage> createState() => _ModelPreviewPageState();
 }
 
@@ -577,7 +578,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
       printer:widget.printer,slicer:widget.slicer,nozzle:widget.nozzle,priority:widget.quality,supportStatus:m.supports.status,supportReason:m.supports.reason);
     final project=StudioProject(id:projectId,name:name,printer:widget.printer,slicer:widget.slicer,nozzle:widget.nozzle,bed:bed,
       parts:[PlatePlacement(id:'0',part:part,x:bed.width/2,y:bed.depth/2,scale:modelScale)],recipe:recipe);
-    await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:pickPlatePart,project:project,openSettings:true)));
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:pickPlatePart,project:project,openSettings:true,repository:widget.projectRepository)));
   }
 
   @override Widget build(BuildContext context) {

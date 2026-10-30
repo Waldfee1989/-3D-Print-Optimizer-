@@ -162,6 +162,7 @@ jobs:
           DART
           cat > test/preview_ci/model_preview_test.dart <<'DART'
           import 'dart:convert';
+          import 'dart:io';
           import 'dart:typed_data';
 
           import 'package:file_picker/file_picker.dart';
@@ -170,6 +171,7 @@ jobs:
           import 'package:print_optimizer/main.dart';
           import 'package:shared_preferences/shared_preferences.dart';
           import 'package:print_optimizer/project_optimizer.dart';
+          import 'package:print_optimizer/studio_project.dart';
           import '../scroll_helpers.dart';
 
           class _Picker extends FilePicker {
@@ -213,9 +215,9 @@ jobs:
             }
           }
 
-          Future<void> loadModel(WidgetTester tester, {_Picker? picker}) async {
+          Future<void> loadModel(WidgetTester tester, {_Picker? picker,StudioProjectRepository? repository}) async {
             FilePicker.platform = picker ?? _Picker();
-            await tester.pumpWidget(const MaterialApp(home: ModelPreviewPage()));
+            await tester.pumpWidget(MaterialApp(home: ModelPreviewPage(projectRepository:repository)));
             await tester.tap(find.text('STL / 3MF auswählen'));
             // compute runs on a real isolate, outside the widget test's fake clock.
             for (var attempt = 0; attempt < 200; attempt++) {
@@ -229,15 +231,22 @@ jobs:
           void main() {
             testWidgets('Loaded model leads through questions to a saved recommendation', (tester) async {
               SharedPreferences.setMockInitialValues({});
-              await loadModel(tester);
+              final directory=await tester.runAsync(()=>Directory.systemTemp.createTemp('optimizer-model-project-'));
+              addTearDown(()=>directory!.delete(recursive:true));
+              final repository=StudioProjectRepository(directory:directory);
+              await loadModel(tester,repository:repository);
               await tester.tap(find.text('OK'));
               await tester.pumpAndSettle();
               expect(find.text('Was ist dir wichtig?'), findsOneWidget);
               expect(find.text('test.stl'), findsOneWidget);
               await tester.tap(find.text('Mechanisches Teil / Gebrauchsteil'));
               await tester.tap(find.text('Speichern'));
-              await tester.pumpAndSettle();
+              for(var i=0;i<200&&find.text('Filament: PETG').evaluate().isEmpty;i++){
+                await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:50)));await tester.pump();
+              }
               expect(find.text('Filament: PETG'), findsOneWidget);
+              final restored=await tester.runAsync(()async{final projects=await repository.list();return repository.load(projects.single.id);});
+              expect(restored!.parts.length,1);expect(restored.recipe!.functional,isTrue);
               expect((await loadPrintProjects()).single.fileName, 'test.stl');
               await tester.pumpWidget(const SizedBox());
             });
