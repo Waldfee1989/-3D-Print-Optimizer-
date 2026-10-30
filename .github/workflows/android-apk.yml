@@ -11,6 +11,8 @@ on:
       - material-advice
       - model-tools
       - connections-studio
+      - integrated-slicer
+      - voice-adapter
       - project-optimizer
 
 permissions:
@@ -52,6 +54,9 @@ jobs:
 
       - name: Lokale Geometrie einrichten
         run: python3 scripts/configure_android_geometry.py
+
+      - name: Optionale Spracheingabe einrichten
+        run: python3 scripts/configure_android_voice.py
 
       - name: Android SDK 36 einstellen
         run: |
@@ -143,6 +148,15 @@ jobs:
 
           PY
 
+      - name: Lokalen Slicer bauen
+        run: python3 scripts/build_slicer_engine.py --output build/slicer-android --android
+
+      - name: Lokalen Slicer einrichten
+        run: python3 scripts/configure_android_slicer.py build/slicer-android/liboptimizer_slicer.so
+
+      - name: Exakte Slicer-Quellen paketieren
+        run: python3 scripts/package_slicer_sources.py build/slicer-android
+
       - name: APK erstellen
         run: flutter build apk --release --target-platform android-arm64 --build-number=${{ github.run_number }}
 
@@ -153,7 +167,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: 3D-Print-Optimizer-Android
-          path: build/app/outputs/flutter-apk/app-release.apk
+          path: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/slicer-android/CuraEngine-source.zip
 
       - name: APK als Release veroeffentlichen
         if: github.ref == 'refs/heads/main'
@@ -161,7 +177,9 @@ jobs:
         with:
           tag_name: build-${{ github.run_number }}
           name: 3D Print Optimizer Build ${{ github.run_number }}
-          files: build/app/outputs/flutter-apk/app-release.apk
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/slicer-android/CuraEngine-source.zip
 
       - name: Temporaere Signaturdateien entfernen
         if: always()
