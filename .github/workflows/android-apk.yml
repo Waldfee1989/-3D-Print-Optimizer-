@@ -14,6 +14,7 @@ on:
       - integrated-slicer
       - voice-adapter
       - photo-web-search
+      - photo-to-stl
       - project-optimizer
 
 permissions:
