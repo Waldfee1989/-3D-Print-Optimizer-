@@ -21,6 +21,11 @@ void main(){
     expect(restored.parts[0].part.width,20);expect(restored.bed.height,250);
     expect(restored.recipe!.warm,isTrue);expect(restored.recipe!.functional,isTrue);
   });
+  test('Imported project gets an independent settings identity',(){
+    final original=project(),imported=project().copy(id:'imported_copy');
+    expect(imported.recipe!.id,'imported_copy');expect(original.recipe!.id,'fixture');
+    expect(imported.parts[0].part.vertices,original.parts[0].part.vertices);
+  });
   test('Private project storage reopens without any source model files',()async{
     final directory=await Directory.systemTemp.createTemp('optimizer-project-');
     addTearDown(()=>directory.delete(recursive:true));final repo=StudioProjectRepository(directory:directory);
