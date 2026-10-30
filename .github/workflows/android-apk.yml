@@ -10,6 +10,7 @@ on:
       - filament-scan
       - material-advice
       - model-tools
+      - connections-studio
       - project-optimizer
 
 permissions:
