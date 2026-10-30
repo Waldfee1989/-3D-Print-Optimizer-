@@ -52,3 +52,57 @@ AdapterRequest parseAdapterRequest(String input){
   }
   return AdapterRequest(hits.map((h)=>h.$3).toList(),length:dimension('laenge|lang|gesamtlaenge'),wall:dimension('wandstaerke|wanddicke'),socket:dimension('stecktiefe'));
 }
+
+enum AdapterField { first,second,length,wall,socket }
+class AdapterDraft {
+  AdapterPort? first,second;
+  double? length,wall,socket;
+  List<AdapterField> get missing=>[
+    if(first==null)AdapterField.first,if(second==null)AdapterField.second,
+    if(length==null)AdapterField.length,if(wall==null)AdapterField.wall,if(socket==null)AdapterField.socket,
+  ];
+  AdapterField? get next=>missing.isEmpty?null:missing.first;
+  bool get complete=>missing.isEmpty;
+  String get question=>switch(next){
+    AdapterField.first=>'Welchen Durchmesser braucht Seite A? Innen oder außen?',
+    AdapterField.second=>'Welchen Durchmesser braucht Seite B? Innen oder außen?',
+    AdapterField.length=>'Wie lang soll der Adapter insgesamt sein? Angabe in Millimetern.',
+    AdapterField.wall=>'Welche Wandstärke sollen die Öffnungen haben? Angabe in Millimetern.',
+    AdapterField.socket=>'Wie lang soll der gerade Steckbereich je Seite sein? Angabe in Millimetern.',
+    null=>'Sind diese Maße richtig?',
+  };
+  void clear(AdapterField field){switch(field){
+    case AdapterField.first:first=null;
+    case AdapterField.second:second=null;
+    case AdapterField.length:length=null;
+    case AdapterField.wall:wall=null;
+    case AdapterField.socket:socket=null;
+  }}
+  void apply(AdapterRequest request){
+    if(request.ports.length==2){first=request.ports[0];second=request.ports[1];}
+    else if(request.ports.length==1){if(first==null){first=request.ports[0];}else if(second==null){second=request.ports[0];}}
+    if(request.length!=null)length=request.length;if(request.wall!=null)wall=request.wall;if(request.socket!=null)socket=request.socket;
+  }
+  bool answer(String text,{DiameterKind? kind}){
+    final field=next,before=missing.length,request=parseAdapterRequest(text);
+    if(request.ports.length>2)return false;
+    apply(request);
+    if(field!=null&&missing.contains(field)){
+      final normalized=normalizeAdapterSpeech(text).trim();
+      final match=RegExp(r'^(\d+(?:\.\d+)?)\s*(mm|millimeter|cm|zentimeter)?$').firstMatch(normalized);
+      final number=match==null?null:double.parse(match[1]!)*(match[2]=='cm'||match[2]=='zentimeter'?10:1);
+      if(number!=null&&number>0&&number.isFinite){switch(field){
+        case AdapterField.first:if(kind!=null)first=AdapterPort(kind,number);
+        case AdapterField.second:if(kind!=null)second=AdapterPort(kind,number);
+        case AdapterField.length:length=number;
+        case AdapterField.wall:wall=number;
+        case AdapterField.socket:socket=number;
+      }}
+    }
+    return missing.length<before;
+  }
+  AdapterSpec spec(){
+    if(!complete)throw const FormatException('Es fehlen noch Maße.');
+    return AdapterSpec(first:first!,second:second!,length:length!,wall:wall!,socket:socket!);
+  }
+}

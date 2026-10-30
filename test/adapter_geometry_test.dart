@@ -21,6 +21,18 @@ void main(){
     expect(request.ports[0].diameter,35.5);expect(request.wall,2.5);expect(request.length,60);expect(request.socket,15);
     expect(parseAdapterRequest('Adapter 35 auf 50').ports,isEmpty);
   });
+  test('Missing dimensions produce targeted questions without silent defaults',(){
+    final draft=AdapterDraft();
+    expect(draft.answer('innen 35 mm und außen 50 mm'),isTrue);
+    expect(draft.next,AdapterField.length);expect(draft.wall,isNull);expect(draft.socket,isNull);
+    expect(()=>draft.spec(),throwsFormatException);
+    draft.answer('sechzig Millimeter');expect(draft.next,AdapterField.wall);
+    draft.answer('zwei Komma fünf Millimeter');expect(draft.next,AdapterField.socket);
+    draft.answer('fünfzehn mm');expect(draft.complete,isTrue);
+    expect(draft.spec().length,60);expect(draft.spec().wall,2.5);expect(draft.spec().socket,15);
+    draft.clear(AdapterField.first);expect(draft.answer('35 mm'),isFalse);
+    expect(draft.answer('35 mm',kind:DiameterKind.inner),isTrue);
+  });
   test('Adapter is a closed hollow solid with the requested end diameters',(){
     final model=buildAdapter(const AdapterSpec(first:AdapterPort(DiameterKind.inner,35),second:AdapterPort(DiameterKind.outer,50)));
     expect(model.width,50);expect(model.height,60);expect(assessSupports(model.vertices).valid,isTrue);
