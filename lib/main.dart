@@ -25,6 +25,7 @@ import 'low_stock.dart';
 import 'help_chat.dart';
 import 'model_cut.dart';
 import 'app_design.dart';
+import 'studio_projects_page.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -242,7 +243,7 @@ class _HomePageState extends State<HomePage> {
             StudioTool(title:'Druckplatte',subtitle:'Mehrere Teile zusammenstellen',icon:Icons.dashboard_customize_outlined,
               color:const Color(0xffda6b37),onTap:openBuildPlate),
             StudioTool(title:'Druckprojekte',subtitle:'Gespeicherte Einstellungen',icon:Icons.folder_copy_outlined,
-              color:studioPurple,onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PrintProjectsPage()))),
+              color:studioPurple,onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>StudioProjectsPage(pickPart:pickPlatePart)))),
             StudioTool(title:'Meine Düsen',subtitle:'Dein Bestand, passend zum Druck',icon:Icons.settings_input_component_outlined,
               color:const Color(0xff3776be),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>NozzleInventoryPage(printer:printer,installed:nozzle)))),
             StudioTool(title:'Filamentlager',subtitle:'${stock.length} Rollen · ${reorderFilaments(stock,lowStockThreshold).length} nachbestellen',

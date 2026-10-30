@@ -66,9 +66,9 @@ Future<void> savePrintProject(PrintProject project) async {
 }
 
 class ProjectOptimizerPage extends StatefulWidget {
-  const ProjectOptimizerPage({super.key, required this.project, this.showResult = false});
+  const ProjectOptimizerPage({super.key, required this.project, this.showResult = false,this.returnProject=false});
   final PrintProject project;
-  final bool showResult;
+  final bool showResult,returnProject;
   @override State<ProjectOptimizerPage> createState() => _ProjectOptimizerPageState();
 }
 
@@ -154,6 +154,7 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
         onPressed: () => Navigator.push(context,MaterialPageRoute(builder: (_) => HelpChatPage(project: current)))),
         if (!result) TextButton(onPressed: saving ? null : finish,
         child: Text(saving ? 'Speichert …' : 'Speichern')),
+        if(result&&widget.returnProject)TextButton(onPressed:()=>Navigator.pop(context,current),child:const Text('Übernehmen')),
         if (result) PopupMenuButton<String>(tooltip: 'Einstellungen exportieren',
           onSelected: exportSettings, itemBuilder: (_) => [
             const PopupMenuItem(value: 'copy', child: Text('Einstellungen kopieren')),

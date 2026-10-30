@@ -12,7 +12,7 @@ on:
       - project-optimizer
       - simpler-app
       - model-tools
-      - connections-studio
+      - integrated-slicer
     paths:
       - 'lib/**'
       - 'native/**'

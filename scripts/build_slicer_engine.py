@@ -35,6 +35,13 @@ def build(output, android=False, abi='arm64-v8a', jobs=2):
     # Only platform/build adaptation; keep a machine-readable, published patch.
     header=source/'src/utils/math.h'
     if '#include <cstdint>' not in header.read_text(): header.write_text('#include <cstdint>\n'+header.read_text())
+    path_source=source/'src/utils/getpath.cpp'
+    path_text=path_source.read_text()
+    if 'char buffer[filePath.size()];' in path_text:
+        path_text=path_text.replace('#include <iostream>','#include <iostream>\n#include <vector>')
+        path_text=path_text.replace('char buffer[filePath.size()];','std::vector<char> buffer(filePath.size()+1);')
+        path_text=path_text.replace('std::strcpy(buffer, filePath.c_str())','std::strcpy(buffer.data(), filePath.c_str())').replace('dirname(buffer)','dirname(buffer.data())')
+        path_source.write_text('// Print Optimizer adaptation, 2026-10-30: sized path buffer.\n'+path_text)
     cmake=source/'CMakeLists.txt';original=cmake.read_text()
     text=original.replace('if (UNIX)\n','if (UNIX AND NOT ANDROID)\n').replace('if(NOT APPLE AND NOT WIN32)\n','if(NOT APPLE AND NOT WIN32 AND NOT ANDROID)\n')
     cmake.write_text(text)

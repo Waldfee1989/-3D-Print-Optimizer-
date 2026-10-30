@@ -13,137 +13,85 @@ import 'print_geometry.dart';
 import 'support_analysis.dart';
 import 'printer_setup.dart';
 import 'model_cut.dart';
-
-class PlatePart {
-  const PlatePart({required this.name,required this.vertices,required this.unitScale,
-    required this.width,required this.depth,required this.height});
-  final String name;
-  final Float32List vertices; // Centered normalized coordinates, all triangles.
-  final double unitScale, width, depth, height; // Original dimensions in mm.
-}
-class PlatePlacement {
-  const PlatePlacement({required this.id,required this.part,required this.x,required this.y,
-    this.scale = 1,this.turns = 0});
-  final String id;
-  final PlatePart part;
-  final double x,y,scale;
-  final int turns;
-  double get width => (turns.isOdd ? part.depth : part.width)*scale;
-  double get depth => (turns.isOdd ? part.width : part.depth)*scale;
-  Rect get bounds => Rect.fromCenter(center: Offset(x,y),width: width,height: depth);
-  PlatePlacement copy({double? x,double? y,double? scale,int? turns}) => PlatePlacement(
-    id: id,part: part,x: x ?? this.x,y: y ?? this.y,scale: scale ?? this.scale,turns: turns ?? this.turns);
-  bool fits(double w,double d,[double h = double.infinity]) => bounds.left >= -1e-6 && bounds.bottom <= d+1e-6 &&
-    bounds.top >= -1e-6 && bounds.right <= w+1e-6 && part.height*scale <= h+1e-6;
-}
-
-PlatePlacement placeNextPart(PlatePart part,List<PlatePlacement> existing,double width,double depth,String id,{double scale = 1,int turns = 0}) {
-  final original = PlatePlacement(id: id,part: part,x: 0,y: 0,scale: scale,turns: turns);
-  final xs = <double>[5,for (final p in existing) p.bounds.right+5]..sort();
-  final ys = <double>[5,for (final p in existing) p.bounds.bottom+5]..sort();
-  for (final turn in [turns,(turns+1)%4]) {
-    final prototype = original.copy(turns: turn);
-    for (final y in ys) {
-      for (final x in xs) {
-        final next = prototype.copy(x: x+prototype.width/2,y: y+prototype.depth/2);
-        if (next.fits(width,depth) && existing.every((p) => !next.bounds.inflate(2).overlaps(p.bounds))) return next;
-      }
-    }
-  }
-  return original.copy(x: width/2,y: depth/2);
-}
-
-(List<PlatePlacement>,int) autoOrientPlate((List<PlatePlacement>,double,double,double) request) {
-  final output = <PlatePlacement>[];
-  var unknown = 0;
-  for (final placed in request.$1) {
-    var part = placed.part;
-    var turns = 0;
-    final assessment = assessSupports(part.vertices);
-    if (!assessment.valid) { unknown++; turns = placed.turns; }
-    else {
-      final axis = fittingPrintOrientation(part.vertices,assessment,part.unitScale*placed.scale,PrinterBed(request.$2,request.$3,request.$4));
-      if (axis == null) { unknown++; output.add(placeNextPart(part,output,request.$2,request.$3,placed.id,scale: placed.scale,turns: placed.turns)); continue; }
-      final v = rotatePrintVertices(part.vertices,axis);
-      var minX = double.infinity,minY = double.infinity,minZ = double.infinity;
-      var maxX = double.negativeInfinity,maxY = double.negativeInfinity,maxZ = double.negativeInfinity;
-      for (var i = 0; i < v.length; i += 3) {
-        minX = math.min(minX,v[i]); maxX = math.max(maxX,v[i]);
-        minY = math.min(minY,v[i+1]); maxY = math.max(maxY,v[i+1]);
-        minZ = math.min(minZ,v[i+2]); maxZ = math.max(maxZ,v[i+2]);
-      }
-      part = PlatePart(name: part.name,vertices: v,unitScale: part.unitScale,
-        width: (maxX-minX)*part.unitScale,depth: (maxY-minY)*part.unitScale,height: (maxZ-minZ)*part.unitScale);
-    }
-    output.add(placeNextPart(part,output,request.$2,request.$3,placed.id,scale: placed.scale,turns: turns));
-  }
-  return (output,unknown);
-}
-
-Uint8List encodePlateStl(List<PlatePlacement> placements) {
-  final count = placements.fold<int>(0,(a,p) => a+p.part.vertices.length~/9);
-  if (count == 0 || 84+count*50 > 100*1024*1024) throw const FormatException('Gemeinsame STL ist größer als 100 MB oder leer.');
-  final bytes = Uint8List(84+count*50);
-  final data = ByteData.sublistView(bytes);
-  const label = '3D Print Optimizer - Druckplatte - mm';
-  bytes.setRange(0,label.length,label.codeUnits); data.setUint32(80,count,Endian.little);
-  var f = 0;
-  for (final placed in placements) {
-    final v = placed.part.vertices;
-    if (v.length % 9 != 0 || !placed.scale.isFinite || placed.scale <= 0 ||
-        !placed.x.isFinite || !placed.y.isFinite || !placed.part.unitScale.isFinite || placed.part.unitScale <= 0) {
-      throw const FormatException('Ungültige Teileanordnung.');
-    }
-    var floor = double.infinity;
-    for (var i = 2; i < v.length; i += 3) { floor = math.min(floor,v[i]); }
-    final scale = placed.part.unitScale*placed.scale;
-    final angle = placed.turns*math.pi/2, c = math.cos(angle), s = math.sin(angle);
-    for (var i = 0; i < v.length; i += 9) {
-      final at = 84+f++*50;
-      for (var k = 0; k < 9; k += 3) {
-        final x = (v[i+k]*c-v[i+k+1]*s)*scale+placed.x;
-        final y = (v[i+k]*s+v[i+k+1]*c)*scale+placed.y;
-        final z = (v[i+k+2]-floor)*scale;
-        for (final entry in [(0,x),(4,y),(8,z)]) {
-          if (!entry.$2.isFinite || entry.$2.abs() > 3.402823466e38) throw const FormatException('Ungültige Exportkoordinaten.');
-          data.setFloat32(at+12+k*4+entry.$1,entry.$2,Endian.little);
-        }
-      }
-      // Zero normals are legal in STL; slicers derive them from the winding.
-    }
-  }
-  return bytes;
-}
+import 'plate_geometry.dart';
+import 'workspace_history.dart';
+import 'studio_project.dart';
+import 'project_optimizer.dart';
+export 'plate_geometry.dart';
 
 class BuildPlatePage extends StatefulWidget {
-  const BuildPlatePage({super.key,required this.pickPart,this.initialPart,this.initialParts = const [],this.initialScale = 1,this.bed = const PrinterBed(250,250,250),this.printer = 'Anycubic Kobra S1'});
+  const BuildPlatePage({super.key,required this.pickPart,this.initialPart,this.initialParts = const [],this.initialScale = 1,this.bed = const PrinterBed(250,250,250),this.printer = 'Anycubic Kobra S1',this.slicer='Anycubic Slicer Next',this.nozzle='0.4',this.project,this.repository});
   final Future<PlatePart?> Function() pickPart;
   final PlatePart? initialPart;
   final List<PlatePart> initialParts;
   final double initialScale;
   final PrinterBed bed;
-  final String printer;
+  final String printer,slicer,nozzle;
+  final StudioProject? project;
+  final StudioProjectRepository? repository;
   @override State<BuildPlatePage> createState() => _BuildPlatePageState();
 }
 class _BuildPlatePageState extends State<BuildPlatePage> {
   List<PlatePlacement> parts = [];
   final images = <String,ui.Image>{};
   final thumbnailTokens = <String,int>{};
-  List<PlatePlacement>? beforeOrientation;
-  late double bedWidth = widget.bed.width,bedDepth = widget.bed.depth;
+  final history=WorkspaceHistory();
+  PlateSnapshot? dragBefore;
+  bool dragRecorded=false;
+  PrintProject? recipe;
+  late String projectId=widget.project?.id??DateTime.now().microsecondsSinceEpoch.toString();
+  late String projectName=widget.project?.name??widget.initialPart?.name??'Druckprojekt';
+  late final repository=widget.repository??StudioProjectRepository();
+  PrinterBed get activeBed=>widget.project?.bed??widget.bed;
+  String get activePrinter=>widget.project?.printer??widget.printer;
+  String get activeSlicer=>widget.project?.slicer??widget.slicer;
+  String get activeNozzle=>recipe?.nozzle??widget.project?.nozzle??widget.nozzle;
+  PlateSnapshot snapshot()=>PlateSnapshot(parts,selected);
+  void remember()=>history.record(snapshot());
+  void restore(PlateSnapshot value){setState((){parts=value.parts;selected=value.selected;});for(final p in parts){unawaited(thumbnail(p));}}
+  void undo()=>restore(history.undo(snapshot()));
+  void redo()=>restore(history.redo(snapshot()));
+  StudioProject currentProject()=>StudioProject(id:projectId,name:projectName,printer:activePrinter,slicer:activeSlicer,
+    nozzle:activeNozzle,bed:activeBed,parts:List.unmodifiable(parts),recipe:recipe);
+  Future<void> saveProject()async{
+    setState((){busy=true;error=null;});
+    try{await repository.save(currentProject());if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Projekt mit allen Modellen gespeichert.')));}
+    catch(_){if(mounted)setState(()=>error='Projekt konnte nicht gespeichert werden. Bitte erneut versuchen.');}
+    finally{if(mounted)setState(()=>busy=false);}
+  }
+  Future<void> exportProject()async{
+    setState((){busy=true;error=null;});
+    try{
+      final bytes=await compute(encodeStudioProject,currentProject());if(!mounted)return;
+      final name=projectName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'),'_');
+      final target=await FilePicker.platform.saveFile(dialogTitle:'Projektdatei speichern',fileName:'$name.printproject',
+        type:FileType.custom,allowedExtensions:['printproject'],bytes:bytes);
+      if(target!=null&&(Platform.isWindows||Platform.isLinux||Platform.isMacOS))await File(target).writeAsBytes(bytes,flush:true);
+    }catch(_){if(mounted)setState(()=>error='Projektdatei konnte nicht exportiert werden.');}
+    finally{if(mounted)setState(()=>busy=false);}
+  }
+  Future<void> editRecipe()async{
+    final p=recipe??PrintProject(id:projectId,fileName:projectName,dimensions:'${parts.length} Teile',printer:activePrinter,slicer:activeSlicer,
+      nozzle:activeNozzle,bed:activeBed,supportStatus:'Im Slicer prüfen',supportReason:'Stützen werden für die gesamte Druckplatte berechnet.');
+    final value=await Navigator.push<PrintProject>(context,MaterialPageRoute(builder:(_)=>ProjectOptimizerPage(project:p,returnProject:true)));
+    if(value!=null&&mounted)setState(()=>recipe=value);
+  }
+  late double bedWidth = activeBed.width,bedDepth = activeBed.depth;
   int selected = -1,counter = 0;
   int? movingPointer;
   bool busy = false;
   String? error;
   @override void initState() {
     super.initState();
+    if(widget.project!=null){parts=List.of(widget.project!.parts);recipe=widget.project!.recipe;selected=parts.isEmpty?-1:0;for(final p in parts){unawaited(thumbnail(p));}}
     if (widget.initialPart != null) addPart(widget.initialPart!,widget.initialScale);
     for (final part in widget.initialParts) { addPart(part,1); }
   }
   void addPart(PlatePart part,double scale) {
+    while(parts.any((p)=>p.id=='$counter')){counter++;}
     final id = '${counter++}';
     final placed = placeNextPart(part,parts,bedWidth,bedDepth,id,scale: scale);
-    beforeOrientation = null; parts = [...parts,placed]; selected = parts.length-1;
+    parts = [...parts,placed]; selected = parts.length-1;
     unawaited(thumbnail(placed));
   }
   Future<void> thumbnail(PlatePlacement placed) async {
@@ -168,19 +116,18 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
       if (!mounted || part == null) return;
       final faces = parts.fold<int>(0,(a,p) => a+p.part.vertices.length~/9)+part.vertices.length~/9;
       if (84+faces*50 > 100*1024*1024) throw const FormatException('Alle Teile zusammen überschreiten 100 MB als STL.');
-      setState(() => addPart(part,1));
+      setState(() {remember();addPart(part,1);});
     } catch (e) { if (mounted) setState(() => error = e is FormatException ? e.message : 'Datei konnte nicht hinzugefügt werden. Größe oder Format prüfen.'); }
     finally { if (mounted) setState(() => busy = false); }
   }
   void change(PlatePlacement next) => changeAt(selected,next);
-  void changeAt(int index,PlatePlacement next) => setState(() { parts = [...parts]..[index] = next; });
+  void changeAt(int index,PlatePlacement next,{bool record=true}) => setState(() { if(record)remember();parts = [...parts]..[index] = next; });
   Future<void> align() async {
     setState(() { busy = true; error = null; });
     try {
-      final previous = parts;
-      final result = await compute(autoOrientPlate,(List<PlatePlacement>.unmodifiable(parts),bedWidth,bedDepth,widget.bed.height));
+      final result = await compute(autoOrientPlate,(List<PlatePlacement>.unmodifiable(parts),bedWidth,bedDepth,activeBed.height));
       if (!mounted) return;
-      setState(() { beforeOrientation = previous; parts = result.$1; });
+      setState(() { remember();parts = result.$1; });
       for (final p in parts) { unawaited(thumbnail(p)); }
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.$2 == 0
         ? 'Alle Teile geometrisch ausgerichtet und neu angeordnet.' : '${result.$2} Teile mit unklarer Geometrie: Drucklage im Slicer prüfen.')));
@@ -202,10 +149,10 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
     if (!mounted) return;
     final input = PlatePart(name: old.part.name,vertices: vertices,unitScale: old.part.unitScale,
       width: old.turns.isOdd ? old.part.depth : old.part.width,depth: old.turns.isOdd ? old.part.width : old.part.depth,height: old.part.height);
-    final cut = await requestModelCut(context,input,old.scale,bed: widget.bed);
+    final cut = await requestModelCut(context,input,old.scale,bed: activeBed);
     if (cut == null || !mounted) return;
     setState(() {
-      beforeOrientation = null; parts = parts.where((p) => p.id != old.id).toList();
+      remember();parts = parts.where((p) => p.id != old.id).toList();
       for (final part in cut) { addPart(part,1); }
     });
     final image = images.remove(old.id);
@@ -246,20 +193,25 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
   }
   @override void dispose() { for (final image in images.values) { image.dispose(); } super.dispose(); }
   @override Widget build(BuildContext context) {
-    final outOfBounds = parts.any((p) => !p.fits(bedWidth,bedDepth,widget.bed.height));
+    final outOfBounds = parts.any((p) => !p.fits(bedWidth,bedDepth,activeBed.height));
     return Scaffold(appBar: AppBar(title: const Text('Druckplatte'),actions: [
       IconButton(tooltip: 'Datei hinzufügen',onPressed: busy ? null : pick,icon: const Icon(Icons.add)),
-      TextButton(onPressed: busy || parts.isEmpty || outOfBounds ? null : save,child: const Text('Speichern')),
+      PopupMenuButton<String>(tooltip:'Speichern und exportieren',enabled:!busy&&parts.isNotEmpty,
+        onSelected:(value){if(value=='project'){saveProject();}else if(value=='archive'){exportProject();}else{save();}},
+        itemBuilder:(_)=>[
+          const PopupMenuItem(value:'project',child:Text('Projekt speichern')),
+          const PopupMenuItem(value:'archive',child:Text('Projektdatei exportieren')),
+          PopupMenuItem(value:'stl',enabled:!outOfBounds,child:const Text('STL exportieren')),
+        ],child:const Padding(padding:EdgeInsets.symmetric(horizontal:14),child:Center(child:Text('Speichern')))),
 
     ]),body: SafeArea(top: false,child: ListView(padding: const EdgeInsets.all(16),children: [
-      Text('${widget.printer}: ${bedWidth.toStringAsFixed(0)} × ${bedDepth.toStringAsFixed(0)} × ${widget.bed.height.toStringAsFixed(0)} mm'),
+      Text('${activePrinter}: ${bedWidth.toStringAsFixed(0)} × ${bedDepth.toStringAsFixed(0)} × ${activeBed.height.toStringAsFixed(0)} mm'),
+      Row(children:[IconButton(tooltip:'Rückgängig',onPressed:!busy&&history.canUndo?undo:null,icon:const Icon(Icons.undo)),
+        IconButton(tooltip:'Wiederholen',onPressed:!busy&&history.canRedo?redo:null,icon:const Icon(Icons.redo)),
+        const Spacer(),TextButton.icon(onPressed:busy?null:editRecipe,icon:const Icon(Icons.tune),label:const Text('Einstellungen'))]),
       const Text('Teil antippen und verschieben. Weitere Datei oben mit + hinzufügen.'),
       const SizedBox(height: 12),
       FilledButton.icon(onPressed: busy || parts.isEmpty ? null : align,icon: const Icon(Icons.auto_fix_high),label: const Text('Automatisch ausrichten')),
-      if (beforeOrientation != null) TextButton(onPressed: busy ? null : () {
-        setState(() { parts = beforeOrientation!; beforeOrientation = null; selected = parts.isEmpty ? -1 : 0; });
-        for (final p in parts) { unawaited(thumbnail(p)); }
-      },child: const Text('Ausrichtung rückgängig')),
       LayoutBuilder(builder: (context,constraints) {
         final pixelsPerMm = constraints.maxWidth/bedWidth;
         return AspectRatio(aspectRatio: bedWidth/bedDepth,child: ClipRRect(borderRadius: BorderRadius.circular(16),
@@ -281,13 +233,14 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
                   child: Listener(behavior: HitTestBehavior.opaque,
                   onPointerDown: busy ? null : (event) {
                     if (movingPointer != null) return;
-                    movingPointer = event.pointer;
+                    movingPointer = event.pointer;dragBefore=snapshot();dragRecorded=false;
                     setState(() => selected = i);
                   },
                   onPointerMove: busy ? null : (event) {
                     if (movingPointer != event.pointer) return;
+                    if(!dragRecorded){history.record(dragBefore!);dragRecorded=true;}
                     changeAt(i,clamp(parts[i].copy(
-                      x: parts[i].x+event.delta.dx/pixelsPerMm,y: parts[i].y-event.delta.dy/pixelsPerMm)));
+                      x: parts[i].x+event.delta.dx/pixelsPerMm,y: parts[i].y-event.delta.dy/pixelsPerMm)),record:false);
                   },
                   onPointerUp: (event) { if (movingPointer == event.pointer) movingPointer = null; },
                   onPointerCancel: (event) { if (movingPointer == event.pointer) movingPointer = null; },
@@ -320,7 +273,7 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
         subtitle: Text('${parts[i].width.toStringAsFixed(1)} × ${parts[i].depth.toStringAsFixed(1)} × ${(parts[i].part.height*parts[i].scale).toStringAsFixed(1)} mm'),
         onTap: () => setState(() => selected = i),trailing: IconButton(tooltip: 'Teil entfernen',onPressed: busy ? null : () {
           final old = parts[i];
-          setState(() { beforeOrientation = null; parts = [...parts]..removeAt(i); selected = parts.isEmpty ? -1 : math.min(i,parts.length-1); });
+          setState(() { remember();parts = [...parts]..removeAt(i); selected = parts.isEmpty ? -1 : math.min(i,parts.length-1); });
           final image = images.remove(old.id);
           if (image != null) WidgetsBinding.instance.addPostFrameCallback((_) => image.dispose());
         },icon: const Icon(Icons.close)))),
