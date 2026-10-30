@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -11,6 +13,15 @@ import 'package:print_optimizer/adapter_geometry.dart';
 import 'package:print_optimizer/adapter_request.dart';
 
 void main(){
+  setUpAll(()async{
+    final icons=FontLoader('MaterialIcons')..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
+    final file=File('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf');
+    if(await file.exists()){
+      final loader=FontLoader('Roboto')..addFont(Future.value(ByteData.sublistView(await file.readAsBytes())));
+      await loader.load();
+    }
+  });
   testWidgets('Spoken request asks for each missing dimension before creating geometry',(tester)async{
     tester.view.physicalSize=const Size(390,844);tester.view.devicePixelRatio=1;
     addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
@@ -65,6 +76,8 @@ void main(){
     expect(tester.widget<TextButton>(find.widgetWithText(TextButton,'Erstellen')).onPressed,isNotNull);expect(tester.takeException(),isNull);
   });
   testWidgets('Sketch requires explicit diameter kind and blocks contradictory length and socket dimensions',(tester)async{
+    tester.view.physicalSize=const Size(320,740);tester.view.devicePixelRatio=1;
+    addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
     final draft=AdapterDraft()..second=const AdapterPort(DiameterKind.outer,50)..length=60..wall=2.5..socket=15;
     await tester.pumpWidget(MaterialApp(theme:studioTheme(),home:AdapterPage(initialDraft:draft)));
     await tester.tap(find.text('Maß in Skizze eintragen'));await tester.pumpAndSettle();
