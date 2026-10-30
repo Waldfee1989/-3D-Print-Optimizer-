@@ -3,12 +3,12 @@
 #include <exception>
 extern "C" JNIEXPORT jobjectArray JNICALL
 Java___JNI_PACKAGE___OptimizerGeometry_nativeCut(JNIEnv* env,jobject,jfloatArray input,jdouble scale,jint axis,jdouble fraction,
-                                                jboolean pins,jdouble diameter,jdouble length,jdouble clearance) {
+                                                jint connection,jdouble diameter,jdouble length,jdouble clearance,jdouble pitch) {
   jfloat* values=nullptr;
   try {
     values=env->GetFloatArrayElements(input,nullptr);
     if (!values) return nullptr;
-    const auto result=CutModel(values,env->GetArrayLength(input),scale,axis,fraction,pins,diameter,length,clearance);
+    const auto result=CutModel(values,env->GetArrayLength(input),scale,axis,fraction,connection,diameter,length,clearance,pitch);
     env->ReleaseFloatArrayElements(input,values,JNI_ABORT);values=nullptr;
     const auto klass=env->FindClass("[F");
     auto array=env->NewObjectArray(2,klass,nullptr);

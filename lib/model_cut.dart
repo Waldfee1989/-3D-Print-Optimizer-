@@ -9,10 +9,9 @@ import 'printer_setup.dart';
 
 const cutChannel = MethodChannel('print_optimizer/model_cut');
 class CutSettings {
-  const CutSettings(this.axis,this.fraction,this.pins,this.diameter,this.length,this.clearance);
-  final int axis;
-  final double fraction,diameter,length,clearance;
-  final bool pins;
+  const CutSettings(this.axis,this.fraction,this.connection,this.diameter,this.length,this.clearance,[this.pitch=2]);
+  final int axis,connection;
+  final double fraction,diameter,length,clearance,pitch;
 }
 PlatePart normalizeCutPart((String,Float32List) input) {
   final v=input.$2;
@@ -40,35 +39,91 @@ Float32List rotatePlateForCut((Float32List,int) input) {
 }
 Future<List<PlatePart>?> requestModelCut(BuildContext context,PlatePart part,double scale,{PrinterBed? bed}) async {
   if(!Platform.isAndroid) return null;
-  final settings=await showDialog<CutSettings>(context: context,builder: (_)=>_CutDialog(part,scale,bed));
+  final settings=await showDialog<CutSettings>(context: context,builder: (_)=>CutDialog(part,scale,bed));
   if(settings==null || !context.mounted) return null;
   return Navigator.push<List<PlatePart>>(context,MaterialPageRoute(builder: (_)=>_CutProgressPage(part,scale,settings)));
 }
-class _CutDialog extends StatefulWidget {
-  const _CutDialog(this.part,this.scale,this.bed);
+class CutDialog extends StatefulWidget {
+  const CutDialog(this.part,this.scale,this.bed);
   final PlatePart part;final double scale;final PrinterBed? bed;
-  @override State<_CutDialog> createState()=>_CutDialogState();
+  @override State<CutDialog> createState()=>CutDialogState();
 }
-class _CutDialogState extends State<_CutDialog> {
+class CutDialogState extends State<CutDialog> {
   final form=GlobalKey<FormState>();
   late int axis;
-  double fraction=.5;bool pins=true;
-  final diameter=TextEditingController(text:'4'),length=TextEditingController(text:'5'),clearance=TextEditingController(text:'0,2');
+  double fraction=.5;int connection=1;
+  final diameter=TextEditingController(text:'4'),length=TextEditingController(text:'5'),clearance=TextEditingController(text:'0,2'),pitch=TextEditingController(text:'2');
   @override void initState(){super.initState();final p=widget.part,b=widget.bed;
     final ratios=[p.width/(b?.width??1),p.depth/(b?.depth??1),p.height/(b?.height??1)];axis=ratios.indexOf(ratios.reduce(math.max));}
   double number(String text)=>double.parse(text.replaceAll(',','.'));
-  @override void dispose(){diameter.dispose();length.dispose();clearance.dispose();super.dispose();}
-  @override Widget build(BuildContext context)=>AlertDialog(title:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
-    const Text('Modell teilen'),FilledButton(onPressed:(){if(form.currentState!.validate())Navigator.pop(context,CutSettings(axis,fraction,pins,number(diameter.text),number(length.text),number(clearance.text)));},child:const Text('Teilen')),
-  ]),content:SingleChildScrollView(child:Form(key:form,child:Column(mainAxisSize:MainAxisSize.min,children:[
-    DropdownButtonFormField<int>(isExpanded: true,initialValue:axis,decoration:const InputDecoration(labelText:'Schnittachse'),items:[for(var i=0;i<3;i++)DropdownMenuItem(value:i,child:Text(['X · Breite','Y · Tiefe','Z · Höhe'][i]))],onChanged:(v)=>setState(()=>axis=v!)),
-    Text('Schnittposition: ${(fraction*100).toStringAsFixed(0)} %'),Slider(value:fraction,min:.1,max:.9,divisions:80,onChanged:(v)=>setState(()=>fraction=v)),
-    SwitchListTile(title:const Text('Zwei Zapfen mit Gegenlöchern'),value:pins,onChanged:(v)=>setState(()=>pins=v)),
-    for(final field in [(diameter,'Zapfendurchmesser in mm',2.0,30.0),(length,'Zapfenlänge in mm',2.0,30.0),(clearance,'Spiel je Seite in mm',.05,1.0)]) Padding(padding:const EdgeInsets.only(bottom:12),child:TextFormField(
-      controller:field.$1,decoration:InputDecoration(labelText:field.$2),keyboardType:const TextInputType.numberWithOptions(decimal:true),validator:(text){final n=double.tryParse((text??'').replaceAll(',','.'));return n==null||!n.isFinite||n<field.$3||n>field.$4?'Wert zwischen ${field.$3} und ${field.$4} eintragen.':null;})),
-    const Text('Verbindungen brauchen ausreichend massives Material. Passung zuerst mit einem kleinen Probedruck prüfen. Originaldatei bleibt unverändert.'),
-  ]))));
+  @override void dispose(){diameter.dispose();length.dispose();clearance.dispose();pitch.dispose();super.dispose();}
+  void choose(int value) => setState(() {
+    connection=value;
+    diameter.text=value==2?'10':value==3?'6':'4';
+    length.text=value==2?'8':value==3?'10':'5';
+  });
+  String? validateNumber(String? text,double min,double max) {
+    final value=double.tryParse((text??'').replaceAll(',','.'));
+    return value==null||!value.isFinite||value<min||value>max?'Erlaubt: $min bis $max mm.':null;
+  }
+  Widget field(TextEditingController controller,String label,double min,double max,{String? Function(String?)? extra}) => Padding(
+    padding:const EdgeInsets.only(bottom:14),child:TextFormField(controller:controller,
+      decoration:InputDecoration(labelText:label,suffixText:'mm'),keyboardType:const TextInputType.numberWithOptions(decimal:true),
+      validator:(text)=>validateNumber(text,min,max)??extra?.call(text)));
+  @override Widget build(BuildContext context)=>AlertDialog(
+    title:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+      const Text('Modell teilen'),const SizedBox(height:12),
+      SizedBox(width:double.infinity,child:FilledButton.icon(icon:const Icon(Icons.content_cut),onPressed:(){
+        if(form.currentState!.validate())Navigator.pop(context,CutSettings(axis,fraction,connection,
+          connection==0?4:number(diameter.text),connection==0?5:number(length.text),connection == 0 ? 0.2 : number(clearance.text),connection==2?number(pitch.text):2));
+      },label:const Text('Teilen'))),
+    ]),
+    content:SizedBox(width:420,child:SingleChildScrollView(child:Form(key:form,child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+      const Text('Verbindung',style:TextStyle(fontWeight:FontWeight.w700)),const SizedBox(height:10),
+      LayoutBuilder(builder:(context,c)=>Wrap(spacing:8,runSpacing:8,children:[for(var i=0;i<4;i++)SizedBox(
+        width:(c.maxWidth-8)/2,child:InkWell(borderRadius:BorderRadius.circular(16),onTap:()=>choose(i),
+          child:AnimatedContainer(duration:const Duration(milliseconds:160),padding:const EdgeInsets.all(12),
+            decoration:BoxDecoration(borderRadius:BorderRadius.circular(16),
+              color:connection==i?Theme.of(context).colorScheme.primaryContainer:Theme.of(context).colorScheme.surfaceContainerLow,
+              border:Border.all(color:connection==i?Theme.of(context).colorScheme.primary:Theme.of(context).colorScheme.outlineVariant)),
+            child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
+              Row(children:[Icon([Icons.cut,Icons.align_vertical_bottom,Icons.hardware_outlined,Icons.link][i],size:23),const Spacer(),
+                if(connection==i)Icon(Icons.check_circle,size:18,color:Theme.of(context).colorScheme.primary)]),
+              const SizedBox(height:8),Text(['Ohne Verbindung','Zapfen','Schraubgewinde','Klickverschluss'][i],style:const TextStyle(fontSize:13,fontWeight:FontWeight.w700)),
+            ]))))])),
+      const SizedBox(height:14),
+      Text(switch(connection){2=>'Ein Gewinde mit passender Aufnahme. Die Teile müssen sich beim Zusammenschrauben drehen können.',
+        3=>'Zwei geschlitzte Rastzapfen mit Haltekante. Elastizität und Passung zuerst am Probedruck prüfen.',
+        1=>'Zwei Zapfen mit passenden Gegenlöchern.',_=>'Nur teilen und Schnittflächen schließen.'}),
+      const SizedBox(height:20),
+      DropdownButtonFormField<int>(isExpanded:true,initialValue:axis,decoration:const InputDecoration(labelText:'Schnittachse'),
+        items:[for(var i=0;i<3;i++)DropdownMenuItem(value:i,child:Text(['X · Breite','Y · Tiefe','Z · Höhe'][i]))],onChanged:(v)=>setState(()=>axis=v!)),
+      const SizedBox(height:12),Text('Schnittposition: ${(fraction*100).toStringAsFixed(0)} %'),
+      Slider(value:fraction,min:.1,max:.9,divisions:80,onChanged:(v)=>setState(()=>fraction=v)),
+      if(connection!=0)...[
+        field(diameter,'Durchmesser',connection==2?8:connection==3?4:2,30),
+        field(length,'Länge',connection==3?6:2,30,extra:(text){
+          final value=number(text!);
+          final step=double.tryParse(pitch.text.replaceAll(',','.'));
+          final d=double.tryParse(diameter.text.replaceAll(',','.'));
+          if(connection==2&&step!=null&&value<3*step)return 'Mindestens drei Gewindesteigungen lang.';
+          if(connection==3&&d!=null&&value<1.2*d)return 'Mindestens 1,2 × Durchmesser lang.';
+          return null;
+        }),
+        if(connection==2)field(pitch,'Gewindesteigung',1,4),
+        field(clearance,'Spiel je Seite',.05,1,extra:(text){
+          final value=number(text!);
+          final step=double.tryParse(pitch.text.replaceAll(',','.'));
+          final d=double.tryParse(diameter.text.replaceAll(',','.'));
+          if(connection==2&&step!=null&&value>.4*step-.1)return 'Spiel zu groß für die Gewindesteigung.';
+          if(connection==3&&d!=null&&value>math.min(.55,d*.07)-.05)return 'Spiel zu groß für die Haltekante.';
+          return null;
+        }),
+        const Text('Braucht ausreichend massives Material. Beide Teile gleich skalieren. Passung und Halt mit einem kleinen Probedruck prüfen.',style:TextStyle(fontSize:12)),
+      ],
+    ])))));
 }
+
 class _CutProgressPage extends StatefulWidget {
   const _CutProgressPage(this.part,this.scale,this.settings);
   final PlatePart part;final double scale;final CutSettings settings;
@@ -81,7 +136,7 @@ class _CutProgressPageState extends State<_CutProgressPage> {
     try {
       final s=widget.settings;
       final result=await cutChannel.invokeMethod<List<dynamic>>('cut',{'vertices':widget.part.vertices,'scale':widget.part.unitScale*widget.scale,
-        'axis':s.axis,'fraction':s.fraction,'pins':s.pins,'diameter':s.diameter,'length':s.length,'clearance':s.clearance});
+        'axis':s.axis,'fraction':s.fraction,'connection':s.connection,'diameter':s.diameter,'length':s.length,'clearance':s.clearance,'pitch':s.pitch});
       if(result==null||result.length!=2)throw const FormatException('Schnitt lieferte keine zwei Teile.');
       final parts=<PlatePart>[];
       for(var i=0;i<2;i++) {

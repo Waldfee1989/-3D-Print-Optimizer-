@@ -12,6 +12,7 @@ on:
       - project-optimizer
       - simpler-app
       - model-tools
+      - connections-studio
     paths:
       - 'lib/**'
       - 'native/**'

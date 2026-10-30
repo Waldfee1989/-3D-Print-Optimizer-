@@ -292,7 +292,7 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
                   onPointerUp: (event) { if (movingPointer == event.pointer) movingPointer = null; },
                   onPointerCancel: (event) { if (movingPointer == event.pointer) movingPointer = null; },
                   child: DecoratedBox(decoration: BoxDecoration(
-                    border: Border.all(color: i == selected ? const Color(0xff6ee7d8) : const Color(0xff8294b5),width: i == selected ? 2 : 1),
+                    border: Border.all(color: i == selected ? const Color(0xffb9a6ff) : const Color(0xff8294b5),width: i == selected ? 2 : 1),
                     color: images[parts[i].id] == null ? const Color(0x333c99bd) : null),
                     child: Align(alignment: Alignment.topLeft,child: Text('${i+1}',style: const TextStyle(color: Colors.white,fontWeight: FontWeight.bold))))))),
             ],
@@ -310,7 +310,7 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
         Wrap(spacing: 8,runSpacing: 8,children: [
           OutlinedButton(onPressed: busy ? null : position,child: const Text('X / Y eingeben')),
           OutlinedButton(onPressed: busy ? null : resize,child: const Text('Größe ändern')),
-          if (Platform.isAndroid) OutlinedButton(onPressed: busy ? null : cutSelected,child: const Text('Teil schneiden')),
+          if (Platform.isAndroid) OutlinedButton(onPressed: busy ? null : cutSelected,child: const Text('Teilen & verbinden')),
           OutlinedButton(onPressed: busy ? null : () => change(clamp(parts[selected].copy(turns: (parts[selected].turns+1)%4))),child: const Text('90° drehen')),
         ]),
       ],
@@ -332,8 +332,8 @@ class _PlateGrid extends CustomPainter {
   _PlateGrid(this.width,this.depth);
   final double width,depth;
   @override void paint(Canvas canvas,Size size) {
-    canvas.drawRect(Offset.zero & size,Paint()..color = const Color(0xff182538));
-    final paint = Paint()..color = const Color(0xff2d4058)..strokeWidth = 1;
+    canvas.drawRect(Offset.zero & size,Paint()..color = const Color(0xff211f34));
+    final paint = Paint()..color = const Color(0xff403950)..strokeWidth = 1;
     final step = math.max(10,(math.max(width,depth)/50/10).ceil()*10).toDouble();
     for (var x = 0.0; x <= width; x += step) canvas.drawLine(Offset(x/width*size.width,0),Offset(x/width*size.width,size.height),paint);
     for (var y = 0.0; y <= depth; y += step) canvas.drawLine(Offset(0,y/depth*size.height),Offset(size.width,y/depth*size.height),paint);
