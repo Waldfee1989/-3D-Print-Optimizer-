@@ -113,6 +113,10 @@ CutOutput CutModel(const float* v,std::size_t length,double unitScale,int axis,d
     throw std::runtime_error("Gewinde: Durchmesser ab 8 mm, Steigung 1 bis 4 mm, Laenge mindestens drei Steigungen.");
   if (connection==3 && (diameter<4 || pinLength<6 || pinLength/diameter<1.2))
     throw std::runtime_error("Klickverschluss: Durchmesser ab 4 mm, Laenge ab 6 mm und mindestens 1,2 mal Durchmesser.");
+  if(connection==2 && clearance>.4*pitch-.1)
+    throw std::runtime_error("Gewindespiel ist zu gross fuer die gewaehlte Steigung.");
+  if(connection==3 && clearance>std::min(.55,diameter*.07)-.05)
+    throw std::runtime_error("Klickspiel ist groesser als die Haltekante. Spiel reduzieren.");
   MeshGL64 mesh; mesh.numProp=3; mesh.vertProperties.reserve(length); mesh.triVerts.reserve(length/3);
   double volume=0;
   for (std::size_t i=0;i<length;i+=9) {

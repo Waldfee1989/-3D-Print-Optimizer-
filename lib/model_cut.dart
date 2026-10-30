@@ -111,7 +111,14 @@ class CutDialogState extends State<CutDialog> {
           return null;
         }),
         if(connection==2)field(pitch,'Gewindesteigung',1,4),
-        field(clearance,'Spiel je Seite',.05,1),
+        field(clearance,'Spiel je Seite',.05,1,extra:(text){
+          final value=number(text!);
+          final step=double.tryParse(pitch.text.replaceAll(',','.'));
+          final d=double.tryParse(diameter.text.replaceAll(',','.'));
+          if(connection==2&&step!=null&&value>.4*step-.1)return 'Spiel zu groß für die Gewindesteigung.';
+          if(connection==3&&d!=null&&value>math.min(.55,d*.07)-.05)return 'Spiel zu groß für die Haltekante.';
+          return null;
+        }),
         const Text('Braucht ausreichend massives Material. Beide Teile gleich skalieren. Passung und Halt mit einem kleinen Probedruck prüfen.',style:TextStyle(fontSize:12)),
       ],
     ])))));

@@ -65,8 +65,8 @@ int main() {
       if(clips!=2)throw std::runtime_error("Expected two separate snap connectors");
     }
   }
-  for(const auto spec : {std::vector<double>{2,6,8,2}, {2,10,4,2}, {3,6,5,2}}) {
-    bool invalid=false;try{CutModel(v.data(),v.size(),1,2,.5,static_cast<int>(spec[0]),spec[1],spec[2],.2,spec[3]);}
+  for(const auto spec : {std::vector<double>{2,6,8,2}, {2,10,4,2}, {3,6,5,2}, {2,10,8,1,.4}, {3,6,10,2,.5}}) {
+    bool invalid=false;try{CutModel(v.data(),v.size(),1,2,.5,static_cast<int>(spec[0]),spec[1],spec[2],spec.size()>4?spec[4]:.2,spec[3]);}
     catch(const std::exception&){invalid=true;}
     if(!invalid)throw std::runtime_error("Unsafe connector parameters accepted");
   }
