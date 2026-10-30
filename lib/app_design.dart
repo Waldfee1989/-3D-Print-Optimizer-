@@ -12,7 +12,7 @@ ThemeData studioTheme() {
   return base.copyWith(
     textTheme:base.textTheme.apply(bodyColor:studioInk,displayColor:studioInk),
     appBarTheme:const AppBarTheme(backgroundColor:Color(0xfff5f4f9),foregroundColor:studioInk,
-      surfaceTintColor:Colors.transparent,centerTitle:false,titleTextStyle:TextStyle(fontSize:20,fontWeight:FontWeight.w800,color:studioInk)),
+      surfaceTintColor:Colors.transparent,centerTitle:false,titleTextStyle:TextStyle(fontFamily:'Roboto',fontSize:20,fontWeight:FontWeight.w800,color:studioInk)),
     cardTheme:CardThemeData(color:Colors.white,surfaceTintColor:Colors.transparent,elevation:0,
       margin:const EdgeInsets.symmetric(vertical:7),shape:RoundedRectangleBorder(
         borderRadius:BorderRadius.circular(24),side:const BorderSide(color:Color(0xffe9e6f1)))),
@@ -21,10 +21,10 @@ ThemeData studioTheme() {
       border:OutlineInputBorder(borderRadius:BorderRadius.circular(16),borderSide:BorderSide.none),
       focusedBorder:OutlineInputBorder(borderRadius:BorderRadius.circular(16),borderSide:const BorderSide(color:studioPurple,width:1.5))),
     filledButtonTheme:FilledButtonThemeData(style:FilledButton.styleFrom(minimumSize:const Size(48,52),
-      textStyle:const TextStyle(fontWeight:FontWeight.w700,fontSize:15),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(16)))),
+      textStyle:const TextStyle(fontFamily:'Roboto',fontWeight:FontWeight.w700,fontSize:15),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(16)))),
     outlinedButtonTheme:OutlinedButtonThemeData(style:OutlinedButton.styleFrom(minimumSize:const Size(48,48),
       side:const BorderSide(color:Color(0xffdcd7ee)),shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(16)))),
-    textButtonTheme:TextButtonThemeData(style:TextButton.styleFrom(textStyle:const TextStyle(fontWeight:FontWeight.w700))),
+    textButtonTheme:TextButtonThemeData(style:TextButton.styleFrom(textStyle:const TextStyle(fontFamily:'Roboto',fontWeight:FontWeight.w700))),
     dividerTheme:const DividerThemeData(color:Color(0xffedeaf3),space:24),
     chipTheme:base.chipTheme.copyWith(side:BorderSide.none,backgroundColor:const Color(0xffeeeaf9),
       shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(12))),

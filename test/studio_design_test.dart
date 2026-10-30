@@ -12,6 +12,8 @@ import 'package:print_optimizer/main.dart';
 void main(){
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(()async{
+    final icons=FontLoader('MaterialIcons')..addFont(rootBundle.load('fonts/MaterialIcons-Regular.otf'));
+    await icons.load();
     final file=File('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf');
     if(await file.exists()){
       final loader=FontLoader('Roboto')..addFont(Future.value(ByteData.sublistView(await file.readAsBytes())));

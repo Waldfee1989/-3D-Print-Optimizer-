@@ -56,6 +56,7 @@ class OptimizerApp extends StatelessWidget {
   const OptimizerApp({super.key});
   @override Widget build(BuildContext context) => MaterialApp(
     title: '3D Print Optimizer',
+    debugShowCheckedModeBanner: false,
     theme: studioTheme(),
     home: const HomePage(),
   );
@@ -231,7 +232,7 @@ class _HomePageState extends State<HomePage> {
         IconButton(tooltip: 'Updates prüfen', onPressed: () => checkForUpdates(manual: true), icon: const Icon(Icons.system_update)),
         IconButton(tooltip: 'Einrichtung', onPressed: setup, icon: const Icon(Icons.settings_outlined)),
       ]),
-    body: SafeArea(top: false, child: prefs == null ? const Center(child: CircularProgressIndicator()) :
+    body: SafeArea(top: false, child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth:960),child: prefs == null ? const Center(child: CircularProgressIndicator()) :
       ListView(padding: const EdgeInsets.fromLTRB(20, 8, 20, 24), children: [
         if (!inventoryOpen) ...[
           const SizedBox(height:8),
@@ -253,7 +254,7 @@ class _HomePageState extends State<HomePage> {
               Row(children: [const Icon(Icons.print_outlined, size: 20), const SizedBox(width: 10),
                 Expanded(child: Text(printer, style: const TextStyle(fontWeight: FontWeight.w600))),
                 Text('$nozzle mm', style: TextStyle(color: Theme.of(context).colorScheme.primary))]),
-              const SizedBox(height: 8), Text(slicer, style: const TextStyle(color: Color(0xffa8b5c9))),
+              const SizedBox(height: 8), Text(slicer, style: const TextStyle(color: studioMuted)),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(isExpanded: true,initialValue: qualityMode,
                 decoration: const InputDecoration(labelText: 'Standard-Druckmodus'),
@@ -298,7 +299,7 @@ class _HomePageState extends State<HomePage> {
             Text('Scanne deine erste Rolle oder füge sie manuell hinzu.'),
           ])),
         ],
-      ])),
+      ])))),
   ));
 }
 
@@ -587,7 +588,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           const SizedBox(height: 12),
           Text(fileName ?? 'Modell', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          Container(height: 320, decoration: BoxDecoration(
+          Container(height: math.max(280,math.min(440,MediaQuery.sizeOf(context).height*.42)), decoration: BoxDecoration(
             color: const Color(0xff1c1a2d),
             borderRadius: BorderRadius.circular(24)),
             child: ClipRRect(borderRadius: BorderRadius.circular(24),

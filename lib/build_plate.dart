@@ -332,8 +332,8 @@ class _PlateGrid extends CustomPainter {
   _PlateGrid(this.width,this.depth);
   final double width,depth;
   @override void paint(Canvas canvas,Size size) {
-    canvas.drawRect(Offset.zero & size,Paint()..color = const Color(0xff182538));
-    final paint = Paint()..color = const Color(0xff2d4058)..strokeWidth = 1;
+    canvas.drawRect(Offset.zero & size,Paint()..color = const Color(0xff211f34));
+    final paint = Paint()..color = const Color(0xff403950)..strokeWidth = 1;
     final step = math.max(10,(math.max(width,depth)/50/10).ceil()*10).toDouble();
     for (var x = 0.0; x <= width; x += step) canvas.drawLine(Offset(x/width*size.width,0),Offset(x/width*size.width,size.height),paint);
     for (var y = 0.0; y <= depth; y += step) canvas.drawLine(Offset(0,y/depth*size.height),Offset(size.width,y/depth*size.height),paint);
