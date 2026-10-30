@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'adapter_geometry.dart';
 import 'adapter_request.dart';
+import 'adapter_measure_sketch.dart';
 import 'app_design.dart';
 import 'build_plate.dart';
 import 'mesh_renderer.dart';
@@ -23,6 +24,35 @@ class _AdapterPageState extends State<AdapterPage>{
   final answer=TextEditingController();
   DiameterKind? kind;PlatePart? created;
   String? error,transcript;bool busy=false;
+  Future<void> editSketchField(AdapterField field)async{
+    final port=field==AdapterField.first?draft.first:field==AdapterField.second?draft.second:null;
+    final initial=switch(field){
+      AdapterField.first||AdapterField.second=>port?.diameter,
+      AdapterField.length=>draft.length,AdapterField.wall=>draft.wall,AdapterField.socket=>draft.socket,
+    };
+    final entry=await showDialog<_MeasuredValue>(context:context,builder:(_)=>_DimensionEntryDialog(field:field,initial:initial,kind:port?.kind));
+    if(entry==null||!mounted)return;
+    setState((){
+      switch(field){
+        case AdapterField.first:draft.first=AdapterPort(entry.kind!,entry.value);
+        case AdapterField.second:draft.second=AdapterPort(entry.kind!,entry.value);
+        case AdapterField.length:draft.length=entry.value;
+        case AdapterField.wall:draft.wall=entry.value;
+        case AdapterField.socket:draft.socket=entry.value;
+      }
+      created=null;error=null;
+    });
+  }
+  Future<void> openSketch()async{
+    await showDialog<void>(context:context,builder:(ctx)=>StatefulBuilder(builder:(ctx,refresh)=>Dialog(
+      insetPadding:const EdgeInsets.symmetric(horizontal:12,vertical:20),
+      child:ConstrainedBox(constraints:const BoxConstraints(maxWidth:600),child:SingleChildScrollView(padding:const EdgeInsets.all(16),child:Column(mainAxisSize:MainAxisSize.min,children:[
+        Row(children:[const Expanded(child:Text('Maße am Bauteil',style:TextStyle(fontSize:20,fontWeight:FontWeight.w700))),IconButton(tooltip:'Skizze schließen',onPressed:()=>Navigator.pop(ctx),icon:const Icon(Icons.close))]),
+        AdapterMeasureSketch(draft:draft,onEdit:(field)async{await editSketchField(field);if(ctx.mounted)refresh((){});}),
+        if(draft.complete&&draft.spec().validate()!=null)Padding(padding:const EdgeInsets.only(top:12),child:Text(draft.spec().validate()!,style:TextStyle(color:Theme.of(ctx).colorScheme.error))),
+      ]))),
+    )));
+  }
   void apply(String text){
     setState((){
       error=draft.answer(text,kind:kind)?null:'Angabe nicht erkannt. Bitte die Größe und bei Durchmessern innen oder außen angeben.';
@@ -47,6 +77,7 @@ class _AdapterPageState extends State<AdapterPage>{
   }
   @override void dispose(){answer.dispose();super.dispose();}
   @override Widget build(BuildContext context){
+    final invalid=draft.complete?draft.spec().validate():null;
     String mm(double value)=>'${value.toStringAsFixed(2).replaceAll(RegExp(r'0+$'),'').replaceAll(RegExp(r'\.$'),'')} mm';
     final rows=<(AdapterField,String,String)>[
       if(draft.first!=null)(AdapterField.first,'Seite A','${draft.first!.kind==DiameterKind.inner?'Innen':'Außen'}durchmesser ${mm(draft.first!.diameter)}'),
@@ -56,9 +87,11 @@ class _AdapterPageState extends State<AdapterPage>{
       if(draft.socket!=null)(AdapterField.socket,'Steckbereich je Seite',mm(draft.socket!)),
     ];
     return Scaffold(appBar:AppBar(title:const Text('Bauteil erstellen'),actions:[
-      TextButton(onPressed:busy||!draft.complete?null:created==null?create:()=>Navigator.pop(context,created),child:Text(created==null?'Erstellen':'Übernehmen')),
+      TextButton(onPressed:busy||!draft.complete||invalid!=null?null:created==null?create:()=>Navigator.pop(context,created),child:Text(created==null?'Erstellen':'Übernehmen')),
     ]),body:SafeArea(top:false,child:ListView(padding:const EdgeInsets.all(20),children:[
       const StudioHeading('Beschreiben. Prüfen. Erstellen.',subtitle:'Vorlage: Runder Übergang mit zwei Steckseiten.'),
+      OutlinedButton.icon(onPressed:busy?null:openSketch,icon:const Icon(Icons.design_services_outlined),label:const Text('Maß in Skizze eintragen')),
+      const SizedBox(height:12),
       if(created!=null)...[
         _AdapterPreview(part:created!),const SizedBox(height:12),
         Text('Modell: ${created!.width.toStringAsFixed(1)} × ${created!.depth.toStringAsFixed(1)} × ${created!.height.toStringAsFixed(1)} mm'),
@@ -89,6 +122,7 @@ class _AdapterPageState extends State<AdapterPage>{
       ],
       if(busy)const LinearProgressIndicator(),
       if(error!=null)Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Text(error!,style:TextStyle(color:Theme.of(context).colorScheme.error))),
+      if(invalid!=null)Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Text(invalid,style:TextStyle(color:Theme.of(context).colorScheme.error))),
       if(transcript!=null)Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Text('Erkannt: $transcript',style:const TextStyle(fontSize:12,color:studioMuted))),
       if(rows.isNotEmpty)...[
         const StudioHeading('Deine Maße'),
@@ -98,6 +132,54 @@ class _AdapterPageState extends State<AdapterPage>{
       ],
       const SizedBox(height:12),const Text('Keine Maße werden stillschweigend ergänzt. Angaben sind Nennmaße; die Steckpassung mit einem kleinen Probedruck prüfen.',style:TextStyle(fontSize:12)),
     ])));
+  }
+}
+class _MeasuredValue {
+  const _MeasuredValue(this.value,this.kind);
+  final double value;final DiameterKind? kind;
+}
+class _DimensionEntryDialog extends StatefulWidget {
+  const _DimensionEntryDialog({required this.field,this.initial,this.kind});
+  final AdapterField field;final double? initial;final DiameterKind? kind;
+  @override State<_DimensionEntryDialog> createState()=>_DimensionEntryDialogState();
+}
+class _DimensionEntryDialogState extends State<_DimensionEntryDialog>{
+  late final controller=TextEditingController(text:widget.initial?.toString().replaceAll('.',',')??'');
+  late DiameterKind? kind=widget.kind;
+  String? error;
+  bool get isPort=>widget.field==AdapterField.first||widget.field==AdapterField.second;
+  void save(){
+    final match=RegExp(r'^(\d+(?:[.,]\d+)?)\s*(mm|cm)?$',caseSensitive:false).firstMatch(controller.text.trim());
+    final value=match==null?null:double.tryParse(match[1]!.replaceAll(',','.'));
+    final millimetres=value==null?null:value*(match![2]?.toLowerCase()=='cm'?10:1);
+    if(millimetres==null||!millimetres.isFinite||millimetres<=0){setState(()=>error='Ein positives Maß in mm oder cm eintragen.');return;}
+    if(isPort&&kind==null){setState(()=>error='Bitte ausdrücklich Innenmaß oder Außenmaß wählen.');return;}
+    final range=switch(widget.field){
+      AdapterField.first||AdapterField.second=>(2.0,1000.0),
+      AdapterField.length=>(5.0,2000.0),AdapterField.wall=>(.8,30.0),AdapterField.socket=>(2.0,500.0),
+    };
+    if(millimetres<range.$1||millimetres>range.$2){setState(()=>error='Maß zwischen ${AdapterMeasureSketch.millimetres(range.$1)} und ${AdapterMeasureSketch.millimetres(range.$2)} eintragen.');return;}
+    Navigator.pop(context,_MeasuredValue(millimetres,kind));
+  }
+  @override void dispose(){controller.dispose();super.dispose();}
+  @override Widget build(BuildContext context){
+    final title=switch(widget.field){AdapterField.first=>'Durchmesser Seite A',AdapterField.second=>'Durchmesser Seite B',AdapterField.length=>'Gesamtlänge',AdapterField.wall=>'Wandstärke',AdapterField.socket=>'Steckbereich je Seite'};
+    final hint=switch(widget.field){
+      AdapterField.first||AdapterField.second=>'Innen: freie Öffnung. Außen: von Außenkante zu Außenkante einschließlich Wand.',
+      AdapterField.length=>'Von Stirnfläche A bis Stirnfläche B, einschließlich beider gerader Steckbereiche.',
+      AdapterField.wall=>'Nur das feste Material zwischen Innenfläche und Außenfläche an einer Öffnung messen.',
+      AdapterField.socket=>'Länge eines geraden Endstücks bis zum Beginn der Schräge. Die Vorlage verwendet an beiden Seiten die gleiche Länge.',
+    };
+    return AlertDialog(scrollable:true,title:Text(title),content:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
+      Text(hint),const SizedBox(height:16),
+      if(isPort)Wrap(spacing:8,children:[
+        ChoiceChip(label:const Text('Innenmaß'),selected:kind==DiameterKind.inner,onSelected:(_)=>setState(()=>kind=DiameterKind.inner)),
+        ChoiceChip(label:const Text('Außenmaß'),selected:kind==DiameterKind.outer,onSelected:(_)=>setState(()=>kind=DiameterKind.outer)),
+      ]),
+      const SizedBox(height:8),TextField(key:const ValueKey('sketch-dimension-input'),controller:controller,autofocus:true,
+        decoration:InputDecoration(labelText:'Maß in mm',helperText:'Auch möglich: 6,8 cm',errorText:error),
+        keyboardType:TextInputType.text,textInputAction:TextInputAction.done,onSubmitted:(_)=>save()),
+    ]),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('Abbrechen')),FilledButton(onPressed:save,child:const Text('Maß speichern'))]);
   }
 }
 class _AdapterPreview extends StatefulWidget {

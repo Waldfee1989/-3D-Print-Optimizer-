@@ -16,6 +16,7 @@ on:
       - integrated-slicer
       - voice-adapter
       - photo-web-search
+      - dimension-sketch
     paths:
       - 'lib/**'
       - 'native/**'
