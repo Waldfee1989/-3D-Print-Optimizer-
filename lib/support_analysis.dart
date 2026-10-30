@@ -2,8 +2,13 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 class SupportAssessment {
-  const SupportAssessment(this.status, this.reason);
+  const SupportAssessment(this.status, this.reason, {this.overhangFaces,
+    this.suggestedAxis = 0, this.overhangFraction = 0, this.suggestedFraction = 0, this.valid = false});
   final String status, reason;
+  final Uint8List? overhangFaces;
+  final int suggestedAxis;
+  final double overhangFraction, suggestedFraction;
+  final bool valid;
 }
 
 // Exact compact vertex IDs and sorted edge pairs replace the old string map.
@@ -20,7 +25,9 @@ SupportAssessment assessSupports(Float32List vertices, {bool is3mf = false}) {
   if (count == 0 || vertices.length % 9 != 0 || count > 2500000) {
     return const SupportAssessment(unknown, 'Modell außerhalb der unterstützten Importgröße.');
   }
-  var volume = 0.0, bottom = double.infinity;
+  var volume = 0.0;
+  final minima = Float64List(3)..fillRange(0,3,double.infinity);
+  final maxima = Float64List(3)..fillRange(0,3,double.negativeInfinity);
   for (var i = 0; i < vertices.length; i += 9) {
     for (var j = i; j < i+9; j++) {
       if (!vertices[j].isFinite) return const SupportAssessment(unknown, 'Ungültige Modellkoordinaten.');
@@ -33,7 +40,12 @@ SupportAssessment assessSupports(Float32List vertices, {bool is3mf = false}) {
     final nz = (bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
     if (nx*nx+ny*ny+nz*nz < 1e-24) return invalid;
     volume += ax*(by*cz-bz*cy)+ay*(bz*cx-bx*cz)+az*(bx*cy-by*cx);
-    bottom = math.min(bottom, math.min(az, math.min(bz, cz)));
+    for (var v = i; v < i+9; v += 3) {
+      for (var k = 0; k < 3; k++) {
+        minima[k] = math.min(minima[k],vertices[v+k]);
+        maxima[k] = math.max(maxima[k],vertices[v+k]);
+      }
+    }
   }
   if (volume.abs() < 1e-10) return invalid;
   final ids = _vertexIds(vertices);
@@ -68,21 +80,48 @@ SupportAssessment assessSupports(Float32List vertices, {bool is3mf = false}) {
   for (var i = 1; i < count; i++) { if (root(i) != firstRoot) return invalid; }
   final sign = volume > 0 ? 1 : -1;
   final threshold = -math.sin(50*math.pi/180);
+  final areas = Float64List(6), contact = Float64List(6);
+  final flags = Uint8List(count);
+  var totalArea = 0.0;
   for (var i = 0; i < vertices.length; i += 9) {
     final ax = vertices[i], ay = vertices[i+1], az = vertices[i+2];
     final bx = vertices[i+3], by = vertices[i+4], bz = vertices[i+5];
     final cx = vertices[i+6], cy = vertices[i+7], cz = vertices[i+8];
-    if (math.max(az, math.max(bz, cz)) <= bottom+1e-5) continue;
     final nx = (by-ay)*(cz-az)-(bz-az)*(cy-ay);
     final ny = (bz-az)*(cx-ax)-(bx-ax)*(cz-az);
     final nz = (bx-ax)*(cy-ay)-(by-ay)*(cx-ax);
-    if (sign*nz/math.sqrt(nx*nx+ny*ny+nz*nz) < threshold) {
-      return const SupportAssessment('Stützen empfohlen',
-        'Überhänge über 50° oberhalb der Grundfläche erkannt. Brücken und Stützbereiche im Slicer prüfen.');
+    final area = math.sqrt(nx*nx+ny*ny+nz*nz);
+    totalArea += area;
+    for (var k = 0; k < 3; k++) {
+      // Candidate order: +Z, -Z, +X, -X, +Y, -Y pointing upward.
+      final coordinate = k == 0 ? 2 : k-1;
+      final normal = coordinate == 0 ? nx : coordinate == 1 ? ny : nz;
+      final lo = math.min(vertices[i+coordinate],math.min(vertices[i+3+coordinate],vertices[i+6+coordinate]));
+      final hi = math.max(vertices[i+coordinate],math.max(vertices[i+3+coordinate],vertices[i+6+coordinate]));
+      for (var direction = 0; direction < 2; direction++) {
+        final candidate = k*2+direction;
+        final onFloor = direction == 0 ? hi <= minima[coordinate]+1e-5 : lo >= maxima[coordinate]-1e-5;
+        if (onFloor) { contact[candidate] += area; continue; }
+        final component = direction == 0 ? normal : -normal;
+        if (sign*component/area < threshold) {
+          areas[candidate] += area;
+          if (candidate == 0) flags[i~/9] = 1;
+        }
+      }
     }
   }
-  return const SupportAssessment('Voraussichtlich keine Stützen nötig',
-    'Keine kritischen Überhänge über 50° erkannt. Material, Brücken und kleine Details im Slicer prüfen.');
+  var best = 0;
+  for (var k = 1; k < 6; k++) {
+    if (areas[k] < areas[best]-totalArea*1e-6 ||
+        ((areas[k]-areas[best]).abs() <= totalArea*1e-6 && contact[k] > contact[best]+totalArea*1e-6)) best = k;
+  }
+  final hasOverhang = areas[0] > 0;
+  return SupportAssessment(hasOverhang ? 'Stützen empfohlen' : 'Voraussichtlich keine Stützen nötig',
+    hasOverhang ? 'Überhänge über 50° oberhalb der Grundfläche erkannt. Brücken und Stützbereiche im Slicer prüfen.'
+      : 'Keine kritischen Überhänge über 50° erkannt. Material, Brücken und kleine Details im Slicer prüfen.',
+    overhangFaces: flags, suggestedAxis: best, valid: true,
+    overhangFraction: areas[0]/totalArea, suggestedFraction: areas[best]/totalArea);
+
 }
 
 Int32List _vertexIds(Float32List vertices) {

@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'material_advice.dart';
+import 'slicer_export.dart';
 
 const projectStorageKey = 'model_projects_v1';
 
@@ -15,21 +16,23 @@ class PrintProject {
     this.functional = false, this.outdoor = false, this.highLoad = false,
     this.flexible = false, this.warm = false, this.surface = 'Sehr glatt',
     this.priority = 'Maximale Qualität', this.supportStatus = 'Im Slicer prüfen',
-    this.supportReason = 'Keine Geometrieprüfung gespeichert.'});
+    this.supportReason = 'Keine Geometrieprüfung gespeichert.', this.modelScale = 1, this.orientation = 'Wie in der Datei'});
   final String id, fileName, dimensions, printer, slicer, nozzle;
   final bool functional, outdoor, highLoad, flexible, warm;
-  final String surface, priority, supportStatus, supportReason;
+  final String surface, priority, supportStatus, supportReason, orientation;
+  final double modelScale;
   MaterialAdvice get advice => recommendMaterial(functional: functional,
     outdoor: outdoor, highLoad: highLoad, flexible: flexible, warm: warm,
     quality: surface == 'Sehr glatt' ? 'Maximale Qualität' : priority);
   Map<String, dynamic> toJson() => {
-    'id': id, 'fileName': fileName, 'dimensions': dimensions, 'printer': printer,
+    'modelScale': modelScale, 'orientation': orientation, 'id': id, 'fileName': fileName, 'dimensions': dimensions, 'printer': printer,
     'slicer': slicer, 'nozzle': nozzle, 'functional': functional, 'outdoor': outdoor,
     'highLoad': highLoad, 'flexible': flexible, 'warm': warm,
     'surface': surface, 'priority': priority, 'supportStatus': supportStatus, 'supportReason': supportReason,
   };
   factory PrintProject.fromJson(Map<String, dynamic> data) => PrintProject(
-    id: data['id'] as String, fileName: data['fileName'] as String,
+    modelScale: (data['modelScale'] as num?)?.toDouble() ?? 1,
+    orientation: data['orientation'] as String? ?? 'Wie in der Datei', id: data['id'] as String, fileName: data['fileName'] as String,
     dimensions: data['dimensions'] as String, printer: data['printer'] as String,
     slicer: data['slicer'] as String, nozzle: data['nozzle'] as String,
     functional: data['functional'] == true, outdoor: data['outdoor'] == true,
@@ -78,6 +81,7 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
   PrintProject get current => PrintProject(id: widget.project.id,
     fileName: widget.project.fileName, dimensions: widget.project.dimensions,
     printer: widget.project.printer, slicer: widget.project.slicer,
+    modelScale: widget.project.modelScale, orientation: widget.project.orientation,
     nozzle: widget.project.nozzle, supportStatus: widget.project.supportStatus,
     supportReason: widget.project.supportReason, functional: functional, outdoor: outdoor,
     highLoad: highLoad, flexible: flexible, warm: warm, surface: surface, priority: priority);
@@ -90,22 +94,24 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
       if (mounted) setState(() => error = 'Speichern fehlgeschlagen. Deine Antworten bleiben hier erhalten. Bitte erneut versuchen.');
     } finally { if (mounted) setState(() => saving = false); }
   }
-  Future<void> exportSettings(bool asFile) async {
+  Future<void> exportSettings(String action) async {
+    final asFile = action != 'copy';
     try {
       final text = projectSettingsText(current);
+      final profiles = action == 'slicer';
       if (asFile) {
-        final bytes = Uint8List.fromList(utf8.encode(text));
+        final bytes = profiles ? createSlicerPresetZip(current) : Uint8List.fromList(utf8.encode(text));
         final name = widget.project.fileName.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'), '_');
         final target = await FilePicker.platform.saveFile(dialogTitle: 'Druckeinstellungen speichern',
-          fileName: '${name}_Einstellungen.txt', type: FileType.custom,
-          allowedExtensions: ['txt'], bytes: bytes);
+          fileName: profiles ? '${name}_Slicerprofile.zip' : '${name}_Einstellungen.txt', type: FileType.custom,
+          allowedExtensions: [profiles ? 'zip' : 'txt'], bytes: bytes);
         if (target == null) return;
         if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
           await File(target).writeAsBytes(bytes, flush: true);
         }
       } else { await Clipboard.setData(ClipboardData(text: text)); }
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(asFile ? 'Einstellungsdatei gespeichert.' : 'Einstellungen kopiert.')));
+        content: Text(action == 'slicer' ? 'ZIP im Slicer über den Konfigurationsimport laden; danach die beiden Print-Optimizer-Profile wählen.' : asFile ? 'Einstellungsdatei gespeichert.' : 'Einstellungen kopiert.')));
     } catch (_) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Export fehlgeschlagen. Bitte erneut versuchen.')));
     }
@@ -115,10 +121,11 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
     return Scaffold(appBar: AppBar(title: Text(result ? 'Deine Druckempfehlung' : 'Was ist dir wichtig?'),
       actions: [if (!result) TextButton(onPressed: saving ? null : finish,
         child: Text(saving ? 'Speichert …' : 'Speichern')),
-        if (result) PopupMenuButton<bool>(tooltip: 'Einstellungen exportieren',
-          onSelected: exportSettings, itemBuilder: (_) => const [
-            PopupMenuItem(value: false, child: Text('Einstellungen kopieren')),
-            PopupMenuItem(value: true, child: Text('Als Textdatei speichern')),
+        if (result) PopupMenuButton<String>(tooltip: 'Einstellungen exportieren',
+          onSelected: exportSettings, itemBuilder: (_) => [
+            const PopupMenuItem(value: 'copy', child: Text('Einstellungen kopieren')),
+            const PopupMenuItem(value: 'text', child: Text('Als Textdatei speichern')),
+            if (supportsSlicerPresetExport(current)) const PopupMenuItem(value: 'slicer', child: Text('Slicerprofile speichern (ZIP)'),),
           ]),
       ]),
       body: SafeArea(top: false, child: ListView(padding: const EdgeInsets.all(16), children: [
@@ -172,25 +179,37 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
   _ => null,
 };
 
+({int outer,int inner,int infill,int top,int bridge,int first,double flowLimit}) printSpeeds(PrintProject p) {
+  final material = p.advice.material;
+  final fine = p.surface == 'Sehr glatt' || p.priority == 'Maximale Qualität';
+  final balanced = p.priority == 'Ausgewogen';
+  return material == 'TPU' ? (outer: 25,inner: 25,infill: 25,top: 20,bridge: 20,first: 20,flowLimit: 2.5)
+    : (outer: fine ? 35 : balanced ? 50 : 80, inner: fine ? 60 : balanced ? 80 : 100,
+       infill: fine ? 80 : balanced ? 100 : 120, top: fine ? 30 : balanced ? 40 : 50,
+       bridge: 25,first: 20,flowLimit: material == 'PETG' ? 6.0 : 8.0);
+}
+
 Map<String, String> projectSettings(PrintProject p) {
   final a = p.advice;
   final t = materialTemperatures(a.material);
   final standardNozzle = double.tryParse(p.nozzle.replaceAll(',', '.')) == .4;
-  final outerSpeed = a.material == 'TPU' ? 25
-    : p.surface == 'Sehr glatt' || p.priority == 'Maximale Qualität' ? 35
-    : p.priority == 'Ausgewogen' ? 50 : 80;
+  final speeds = printSpeeds(p);
   return {
     'Filament': a.material,
     if (t != null) 'Filament-Temperatur': '${t.nozzle} °C',
     if (t != null) 'Druckbett': '${t.bed} °C',
     'Düse': '${p.nozzle} mm',
     if (standardNozzle) 'Schichthöhe': a.layer,
-    if (standardNozzle) 'Erste Schicht': '0,20 mm · 20 mm/s',
+    if (standardNozzle) 'Erste Schicht': '0,20 mm · ${speeds.first} mm/s',
     if (standardNozzle) 'Wände': '${a.walls}',
     if (standardNozzle) 'Füllung': '${a.infill} % · Gyroid',
     if (standardNozzle) 'Deck-/Bodenschichten': a.layer == '0,12 mm' ? '7 / 5' : '5 / 4',
-    if (standardNozzle) 'Außenwand': '$outerSpeed mm/s',
-    'Weitere Geschwindigkeiten': 'Materialprofil',
+    if (standardNozzle) 'Außenwand': '${speeds.outer} mm/s',
+    if (standardNozzle) 'Innenwände': '${speeds.inner} mm/s',
+    if (standardNozzle) 'Füllgeschwindigkeit': '${speeds.infill} mm/s',
+    if (standardNozzle) 'Deckflächen': '${speeds.top} mm/s',
+    if (standardNozzle) 'Brücken': '${speeds.bridge} mm/s',
+    'Max. Volumenstrom': '${speeds.flowLimit} mm³/s',
     'Kühlung': a.material == 'PLA' ? '100 % ab Schicht 3'
       : a.material == 'PETG' ? '50 % ab Schicht 3'
       : a.material == 'ASA' ? '0 % (Brücken: Materialprofil)' : 'TPU-Herstellerprofil',
@@ -201,7 +220,9 @@ Map<String, String> projectSettings(PrintProject p) {
       : a.material == 'PETG' ? 'Trennschicht auf glatter PEI-Platte' : 'Saubere Druckplatte',
     'Bauraum': a.material == 'ASA' ? 'Geschlossen · geeignete Abluft' : 'Nicht aktiv beheizen',
     'Stützen': p.supportStatus,
-    'Druckausrichtung': 'Wie in der Datei',
+    'Druckausrichtung': p.orientation,
+    'Modellgröße': '${(p.modelScale*100).toStringAsFixed(1)} %',
+    'Modelldatei': p.modelScale != 1 || p.orientation != 'Wie in der Datei' ? 'Angepasste STL verwenden' : 'Originaldatei',
     'Oberfläche': p.surface,
   };
 }
@@ -211,8 +232,8 @@ String projectSettingsText(PrintProject project) => [
   '${project.printer} · ${project.slicer}',
   for (final row in projectSettings(project).entries) '${row.key}: ${row.value}',
   'Startwerte. Rollenetikett und kalibriertes Druckerprofil gehen vor.',
-  'Stützenhinweis für die Dateiausrichtung; im Slicer prüfen.',
-  'Einstellungsliste zur manuellen Übernahme, kein importierbares Slicer-Profil.',
+  'Stützenhinweis für die gewählte Drucklage; im Slicer prüfen.',
+  'Textliste zur manuellen Übernahme. Importierbare Profile separat als ZIP exportieren.',
 ].join('\n');
 
 class ProjectRecommendation extends StatelessWidget {
@@ -242,9 +263,9 @@ class ProjectRecommendation extends StatelessWidget {
           if (p.surface == 'Sehr glatt' && p.priority != 'Maximale Qualität')
             const Text('Sehr glatte Oberfläche hat Vorrang vor Geschwindigkeit.'),
           const SizedBox(height: 12),
-          const Text('Überhangprüfung in Dateiausrichtung; Drehen in der Vorschau verändert die Drucklage nicht. '
+          const Text('Überhangprüfung in gewählter Drucklage; Drehen mit dem Finger verändert nur die Ansicht. '
             'Brücken und Stützbereiche im Slicer prüfen. Kein Festigkeitsnachweis. '
-            'Die Werte werden nicht automatisch an den Slicer übertragen.'),
+            'Im Slicer ZIP-Profile importieren und auswählen. Bei geänderter Größe/Drucklage die angepasste STL verwenden. '),
           const SizedBox(height: 12),
         ]),
       ])));

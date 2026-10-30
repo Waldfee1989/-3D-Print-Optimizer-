@@ -20,7 +20,7 @@ void main() {
       expect(find.text(p.advice.reason), findsNothing);
       expect(rows.keys, containsAll(['Kühlung','Rückzug','Haftung','Erste Schicht','Stützen']));
       expect(projectSettingsText(p), contains('Druckbett: ${rows['Druckbett']}'));
-      expect(projectSettingsText(p), contains('kein importierbares Slicer-Profil'));
+      expect(projectSettingsText(p), contains('Importierbare Profile separat als ZIP exportieren.'));
     }
   });
   testWidgets('Home focuses on one model action and inventory remains reachable', (tester) async {

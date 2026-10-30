@@ -16,6 +16,8 @@ import 'filament_scanner.dart';
 import 'project_optimizer.dart';
 import 'support_analysis.dart';
 import 'model_3mf.dart';
+import 'print_geometry.dart';
+import 'model_size_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -324,12 +326,24 @@ class _Mesh {
   final _V3 minimum, maximum;
   final int totalFaces;
   SupportAssessment supports = const SupportAssessment('Im Slicer prüfen', 'Noch nicht geprüft.');
-  late final Float32List renderVertices = _normalizedVertices();
+  late Float32List sourceVertices = _normalizedVertices();
+  Float32List? posedVertices;
+  int printAxis = 0;
+  _V3? poseSize;
+  Float32List get renderVertices => posedVertices ?? sourceVertices;
+  double get radius => math.max(.001, math.sqrt(sourceSize.x*sourceSize.x+sourceSize.y*sourceSize.y+sourceSize.z*sourceSize.z)/2);
+  _Mesh oriented(Float32List pose, SupportAssessment assessment, int axis, (double,double,double) extent) {
+    final copy = _Mesh(faces,minimum,maximum,totalFaces);
+    copy.sourceVertices = sourceVertices;
+    copy.posedVertices = pose; copy.printAxis = axis; copy.supports = assessment;
+    copy.poseSize = _V3(extent.$1*radius,extent.$2*radius,extent.$3*radius);
+    return copy;
+  }
 
   Float32List _normalizedVertices() {
     final center = _V3(minimum.x / 2 + maximum.x / 2,
         minimum.y / 2 + maximum.y / 2, minimum.z / 2 + maximum.z / 2);
-    final extent = size;
+    final extent = sourceSize;
     final radius = math.max(.001, math.sqrt(extent.x * extent.x +
         extent.y * extent.y + extent.z * extent.z) / 2);
     final result = Float32List(faces.length * 9);
@@ -344,8 +358,8 @@ class _Mesh {
     return result;
   }
 
-  _V3 get size => _V3(maximum.x - minimum.x,
-      maximum.y - minimum.y, maximum.z - minimum.z);
+  _V3 get sourceSize => _V3(maximum.x-minimum.x, maximum.y-minimum.y, maximum.z-minimum.z);
+  _V3 get size => poseSize ?? sourceSize;
 }
 
 class _MeshReader {
@@ -437,6 +451,8 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
   String? fileName, error;
   String projectId = DateTime.now().microsecondsSinceEpoch.toString();
   bool loading = false;
+  bool showOverhangs = true;
+  double modelScale = 1;
   double angleX = 25, angleY = 30, zoom = 1;
   final Map<int, Offset> _touches = {};
   double _gestureZoom = 1, _gestureSpan = 0;
@@ -500,7 +516,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
       }
       final parsed = await compute(_MeshReader.inBackground, (file.name, bytes));
       if (!mounted) return;
-      setState(() { mesh = parsed; fileName = file.name; projectId = DateTime.now().microsecondsSinceEpoch.toString(); angleX = 25; angleY = 30; zoom = 1; });
+      setState(() { mesh = parsed; fileName = file.name; projectId = DateTime.now().microsecondsSinceEpoch.toString(); modelScale = 1; angleX = 25; angleY = 30; zoom = 1; });
     } catch (e) {
       if (mounted) setState(() => error = 'Datei konnte nicht geöffnet werden: $e');
     } finally {
@@ -508,18 +524,69 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
     }
   }
 
+  Future<void> optimizeOrientation() async {
+    final m = mesh;
+    if (m == null || loading || !m.supports.valid) return;
+    final target = m.supports.suggestedAxis;
+    if (target == 0) return;
+    setState(() { loading = true; error = null; });
+    try {
+      // The candidate is relative to the current pose. Keep the original
+      // source buffer shared and rotate only its compact preview buffer.
+      final result = await compute(orientPrintModel,(m.renderVertices,target));
+      if (!mounted) return;
+      final copy = m.oriented(result.$1,result.$2,-1,result.$3);
+      setState(() { mesh = copy; angleX = 25; angleY = 30; zoom = 1; });
+    } catch (_) { if (mounted) setState(() => error = 'Drucklage konnte nicht berechnet werden.'); }
+    finally { if (mounted) setState(() => loading = false); }
+  }
+  Future<void> restorePrintPose() async {
+    final m = mesh;
+    if (m == null || loading) return;
+    setState(() => loading = true);
+    try {
+      final result = await compute(orientPrintModel,(m.sourceVertices,0));
+      if (mounted) setState(() { mesh = m.oriented(result.$1,result.$2,0,result.$3); });
+    } finally { if (mounted) setState(() => loading = false); }
+  }
+  Future<void> editSize(bool width) async {
+    final m = mesh;
+    if (m == null || loading) return;
+    final scale = await showDialog<double>(context: context, builder: (_) =>
+      ModelSizeDialog(scale: modelScale,width: m.size.x,editWidth: width));
+    if (mounted && scale != null) setState(() => modelScale = scale);
+  }
+  Future<void> saveModel() async {
+    final m = mesh;
+    if (m == null || loading) return;
+    setState(() { loading = true; error = null; });
+    try {
+      final bytes = await compute(encodePrintStl,(m.renderVertices,m.radius*modelScale));
+      if (!mounted) return;
+      final base = (fileName ?? 'Modell').replaceAll(RegExp(r'[^a-zA-Z0-9._-]'),'_');
+      final target = await FilePicker.platform.saveFile(dialogTitle: 'Modell speichern',
+        fileName: '${base}_angepasst.stl',type: FileType.custom,allowedExtensions: ['stl'],bytes: bytes);
+      if (target == null) return;
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) await File(target).writeAsBytes(bytes,flush: true);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Neue STL-Datei mit Größe und Drucklage gespeichert.')));
+    } catch (_) { if (mounted) setState(() => error = 'Modelldatei konnte nicht gespeichert werden.'); }
+    finally { if (mounted) setState(() => loading = false); }
+  }
+
   @override Widget build(BuildContext context) {
     final m = mesh;
     return Scaffold(
-      appBar: AppBar(title: const Text('3D-Modellvorschau'), actions: [
+      appBar: AppBar(title: const Text('Modell'), actions: [
+        TextButton(onPressed: m == null || loading ? null : saveModel, child: const Text('Datei speichern')),
         TextButton(onPressed: m == null || loading ? null : () => Navigator.push(context,
           MaterialPageRoute(builder: (_) => ProjectOptimizerPage(project: PrintProject(
             id: projectId, fileName: fileName ?? 'Modell',
-            dimensions: '${m.size.x.toStringAsFixed(1)} × ${m.size.y.toStringAsFixed(1)} × ${m.size.z.toStringAsFixed(1)} (Modellkoordinaten, normalerweise mm)',
+            dimensions: '${(m.size.x*modelScale).toStringAsFixed(2)} × ${(m.size.y*modelScale).toStringAsFixed(2)} × ${(m.size.z*modelScale).toStringAsFixed(2)} mm',
+            modelScale: modelScale, orientation: m.printAxis == 0 ? 'Wie in der Datei' : 'Optimiert · angepasste STL verwenden',
             printer: widget.printer, slicer: widget.slicer, nozzle: widget.nozzle,
             priority: widget.quality, supportStatus: m.supports.status, supportReason: m.supports.reason)))), child: const Text('OK')),
       ]),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
+      body: SafeArea(top: false, child: ListView(padding: const EdgeInsets.all(16), children: [
         FilledButton.icon(onPressed: loading ? null : openModel,
           icon: const Icon(Icons.folder_open),
           label: Text(loading ? 'Datei wird geladen...' : 'STL / 3MF auswählen')),
@@ -552,7 +619,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
                   final factor = math.min(1.0, 480 / math.max(
                       constraints.maxWidth, constraints.maxHeight));
                   return _SurfacePreview(mesh: m, angleX: angleX, angleY: angleY,
-                    zoom: zoom, width: math.max(1, (constraints.maxWidth * factor).round()),
+                    zoom: zoom, showOverhangs: showOverhangs, width: math.max(1, (constraints.maxWidth * factor).round()),
                     height: math.max(1, (constraints.maxHeight * factor).round()));
                 }))))),
           const SizedBox(height: 8),
@@ -570,13 +637,30 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           OutlinedButton(onPressed: () => setState(() { angleX = 25; angleY = 30; zoom = 1; }),
             child: const Text('Ansicht zurücksetzen')),
           const SizedBox(height: 8),
-          Text('Abmessungen (Modellkoordinaten, normalerweise mm): '
-            '${m.size.x.toStringAsFixed(1)} × ${m.size.y.toStringAsFixed(1)} × '
-            '${m.size.z.toStringAsFixed(1)}'),
+          Text('Größe: ${(modelScale*100).toStringAsFixed(1)} %'),
+          if (widget.printer == 'Anycubic Kobra S1' &&
+            (m.size.x*modelScale > 250 || m.size.y*modelScale > 250 || m.size.z*modelScale > 250))
+            Text('Zu groß für den Kobra S1: Bauraum 250 × 250 × 250 mm.', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          Text('Abmessungen: ${(m.size.x*modelScale).toStringAsFixed(2)} × ${(m.size.y*modelScale).toStringAsFixed(2)} × ${(m.size.z*modelScale).toStringAsFixed(2)} mm'),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            OutlinedButton(onPressed: loading ? null : () => editSize(false), child: const Text('Größe in %')),
+            OutlinedButton(onPressed: loading || m.size.x <= 0 ? null : () => editSize(true), child: const Text('Breite in mm')),
+            if (modelScale != 1) TextButton(onPressed: () => setState(() => modelScale = 1), child: const Text('Originalgröße')),
+          ]),
+          const Text('Proportionen bleiben erhalten. Oben als neue STL speichern.'),
+          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Überhänge rot anzeigen'),
+            value: showOverhangs, onChanged: m.supports.valid ? (value) => setState(() => showOverhangs = value) : null),
+          OutlinedButton(onPressed: () => setState(() { angleX = 180; angleY = 0; zoom = 1; }), child: const Text('Unterseite ansehen')),
+          FilledButton.icon(onPressed: loading || !m.supports.valid || m.supports.suggestedAxis == 0 ? null : optimizeOrientation,
+            icon: const Icon(Icons.screen_rotation_alt), label: Text(m.supports.valid && m.supports.suggestedAxis == 0 ? 'Drucklage bereits günstig' : 'Drucklage optimieren')),
+          if (m.printAxis != 0) TextButton(onPressed: loading ? null : restorePrintPose, child: const Text('Original-Drucklage')),
+          const Text('Vergleich von sechs Drucklagen nach Überhangfläche und Auflagefläche. Kein Festigkeitsnachweis.'),
+
           Text('Dreiecke: ${m.totalFaces}'),
           Text('Stützen: ${m.supports.status}'),
+          if (m.supports.valid) Text('Kritische Fläche: ${(m.supports.overhangFraction*100).toStringAsFixed(1)} % der Oberfläche'),
           Text(m.supports.reason),
-          const Text('Bewertung für die Dateiausrichtung. Drehen in der Vorschau ändert die Druckausrichtung nicht.'),
+          const Text('Drehen mit dem Finger ändert nur die Ansicht. Optimierte Drucklage und Größe oben als neue STL speichern. STL enthält keine 3MF-Farben.'),
           const SizedBox(height: 12),
           const Text('Originaldatei bleibt unverändert. Stützenhinweis im Slicer prüfen.'),
         ] else if (!loading) ...[
@@ -585,16 +669,17 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           const SizedBox(height: 12),
           const Center(child: Text('Öffne eine STL- oder 3MF-Datei.')),
         ],
-      ]),
+      ])),
     );
   }
 }
 
 class _SurfacePreview extends StatefulWidget {
   const _SurfacePreview({required this.mesh, required this.angleX,
-    required this.angleY, required this.zoom, required this.width, required this.height});
+    required this.angleY, required this.zoom, required this.showOverhangs, required this.width, required this.height});
   final _Mesh mesh;
   final double angleX, angleY, zoom;
+  final bool showOverhangs;
   final int width, height;
 
   @override State<_SurfacePreview> createState() => _SurfacePreviewState();
@@ -611,7 +696,7 @@ class _SurfacePreviewState extends State<_SurfacePreview> {
   @override void didUpdateWidget(covariant _SurfacePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mesh != widget.mesh || oldWidget.angleX != widget.angleX ||
-        oldWidget.angleY != widget.angleY || oldWidget.zoom != widget.zoom ||
+        oldWidget.angleY != widget.angleY || oldWidget.zoom != widget.zoom || oldWidget.showOverhangs != widget.showOverhangs ||
         oldWidget.width != widget.width || oldWidget.height != widget.height) {
       _requestRender();
     }
@@ -629,7 +714,8 @@ class _SurfacePreviewState extends State<_SurfacePreview> {
         final revision = _revision;
         final mesh = widget.mesh;
         final request = MeshRenderRequest(widget.mesh.renderVertices,
-            widget.width, widget.height, widget.angleX, widget.angleY, widget.zoom);
+            widget.width, widget.height, widget.angleX, widget.angleY, widget.zoom,
+            overhangFaces: widget.showOverhangs ? mesh.supports.overhangFaces : null);
         final pixels = await compute(renderMesh, request);
         if (!mounted) return;
         if (mesh != widget.mesh) continue;

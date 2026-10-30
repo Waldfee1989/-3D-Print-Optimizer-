@@ -11,6 +11,7 @@ on:
       - material-advice
       - project-optimizer
       - simpler-app
+      - model-tools
     paths:
       - 'lib/**'
       - 'test/**'
@@ -337,3 +338,4 @@ jobs:
               message = log.read_text(errors='replace')[-16000:]
               message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print('::error title=Vorschau-Testdetails::' + message)
+
