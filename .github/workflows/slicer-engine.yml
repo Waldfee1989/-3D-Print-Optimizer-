@@ -1,0 +1,37 @@
+name: Slicer-Engine pruefen
+on:
+  push:
+    branches: [integrated-slicer]
+    paths: ['scripts/build_slicer_engine.py','scripts/test_slicer_engine.py','assets/slicer/**','.github/workflows/slicer-engine.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [host, android]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Engine aus gepinntem Quellcode bauen
+        shell: bash
+        run: |
+          if [ '${{ matrix.platform }}' = android ]; then
+            python3 scripts/build_slicer_engine.py --output build/slicer-android --android
+          else
+            python3 scripts/build_slicer_engine.py --output build/slicer-host
+          fi
+      - name: Echten G-Code erzeugen und pruefen
+        if: matrix.platform == 'host'
+        run: python3 scripts/test_slicer_engine.py build/slicer-host/optimizer_slicer
+      - name: Android-Binary und Quellen bereitstellen
+        uses: actions/upload-artifact@v4
+        with:
+          name: slicer-${{ matrix.platform }}
+          path: |
+            build/slicer-${{ matrix.platform }}/liboptimizer_slicer.so
+            build/slicer-${{ matrix.platform }}/optimizer_slicer
+            build/slicer-${{ matrix.platform }}/platform-patch.json
