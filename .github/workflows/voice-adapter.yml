@@ -1,0 +1,27 @@
+name: Adapter-Geometrie pruefen
+on:
+  push:
+    branches: [voice-adapter]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Test-Abhaengigkeit bereitstellen
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('pubspec.yaml');text=p.read_text()
+          if '\ndev_dependencies:' not in text:p.write_text(text+'\ndev_dependencies:\n  flutter_test:\n    sdk: flutter\n')
+          PY
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/adapter_geometry.dart lib/adapter_request.dart
+      - run: flutter test test/adapter_geometry_test.dart --reporter expanded
