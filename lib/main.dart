@@ -9,14 +9,13 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'mesh_renderer.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:archive/archive.dart';
-import 'package:xml/xml.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'app_updates.dart';
 import 'filament_inventory.dart';
 import 'filament_scanner.dart';
 import 'project_optimizer.dart';
 import 'support_analysis.dart';
+import 'model_3mf.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -189,6 +188,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> scanFilament() async {
+    if (Platform.isWindows || Platform.isLinux) { await enterCode(); return; }
     final value = await Navigator.push<String>(context,
       MaterialPageRoute(builder: (_) => const FilamentScannerPage()));
     if (!mounted || value == null) return;
@@ -203,40 +203,6 @@ class _HomePageState extends State<HomePage> {
     await handleFilamentCode(value);
   }
 
-  Map<String, String> get profile {
-    switch (qualityMode) {
-      case 'Ausgewogen':
-        return {'Schichthöhe': '0,16 mm', 'Außenwand': '50 mm/s',
-          'Wände': '3', 'Infill': '15 %', 'Oberfläche': 'Standard'};
-      case 'Schneller Druck':
-        return {'Schichthöhe': '0,24 mm', 'Außenwand': '80 mm/s',
-          'Wände': '2', 'Infill': '12 %', 'Oberfläche': 'Geschwindigkeit'};
-      default:
-        return {'Schichthöhe': '0,12 mm', 'Außenwand': '35 mm/s',
-          'Wände': '3', 'Infill': '15 %', 'Oberfläche': 'Feine Details'};
-    }
-  }
-
-  Future<void> showProfile() async {
-    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
-      title: Text('PLA · $qualityMode'),
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('$printer · $slicer · Düse $nozzle mm'),
-          const SizedBox(height: 12),
-          for (final entry in profile.entries) Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Text('${entry.key}: ${entry.value}')),
-          const SizedBox(height: 12),
-          const Text('Startwerte für PLA mit 0,4-mm-Düse. Temperatur, Kühlung, '
-            'Haftung und Beschleunigung müssen mit Filament- und Druckerprofil '
-            'abgeglichen werden. Noch keine STL-/3MF-Modellanalyse oder '
-            'Slicer-Übertragung.'),
-        ])),
-      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Schließen'))],
-    ));
-  }
-
   void openModel() => Navigator.push(context, MaterialPageRoute(builder: (_) =>
     ModelPreviewPage(printer: printer, slicer: slicer, nozzle: nozzle, quality: qualityMode)));
 
@@ -249,7 +215,10 @@ class _HomePageState extends State<HomePage> {
       title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
       subtitle: Text(subtitle), trailing: const Icon(Icons.chevron_right), onTap: onTap));
 
-  @override Widget build(BuildContext context) => Scaffold(
+  @override Widget build(BuildContext context) => PopScope(
+    canPop: !inventoryOpen, onPopInvokedWithResult: (didPop, result) {
+      if (!didPop && inventoryOpen) setState(() => inventoryOpen = false);
+    }, child: Scaffold(
     appBar: AppBar(title: Text(inventoryOpen ? 'Filamentlager' : '3D Print Optimizer'),
       leading: inventoryOpen ? IconButton(tooltip: 'Zur Startseite', icon: const Icon(Icons.arrow_back),
         onPressed: () => setState(() => inventoryOpen = false)) : null,
@@ -334,7 +303,7 @@ class _HomePageState extends State<HomePage> {
           ])),
         ],
       ])),
-  );
+  ));
 }
 
 
@@ -383,7 +352,7 @@ class _MeshReader {
   static _Mesh inBackground((String, Uint8List) input) {
     final parsed = fromBytes(input.$1, input.$2);
     // Prepare the render buffer on the worker too, before returning to the UI.
-    parsed.supports = assessSupports(parsed.renderVertices, is3mf: input.$1.toLowerCase().endsWith('.3mf'));
+    parsed.supports = assessSupports(parsed.renderVertices);
     return parsed;
   }
 
@@ -427,41 +396,13 @@ class _MeshReader {
   }
 
   static _Mesh _from3mf(Uint8List bytes) {
-    final archive = ZipDecoder().decodeBytes(bytes, verify: true);
-    final models = archive.files.where((f) => f.isFile &&
-        f.name.toLowerCase().endsWith('.model')).toList();
-    if (models.isEmpty) throw const FormatException('Keine 3MF-Modelldaten gefunden.');
-    final all = <_Triangle>[];
-    for (final model in models) {
-      final content = model.content;
-      final raw = content is List<int> ? content : <int>[];
-      final doc = XmlDocument.parse(utf8.decode(raw));
-      // Einfache 3MF-Meshes. Komponenten und Build-Transformationen
-      // werden nicht interpretiert und duerfen nicht stillschweigend
-      // als vollstaendige Druckplattenanalyse gelten.
-      for (final mesh in doc.descendants.whereType<XmlElement>()
-          .where((e) => e.name.local == 'mesh')) {
-        final vertices = <_V3>[];
-        for (final v in mesh.descendants.whereType<XmlElement>()
-            .where((e) => e.name.local == 'vertex')) {
-          double coord(String n) => double.parse(v.getAttribute(n) ?? '0');
-          vertices.add(_V3(coord('x'), coord('y'), coord('z')));
-        }
-        for (final t in mesh.descendants.whereType<XmlElement>()
-            .where((e) => e.name.local == 'triangle')) {
-          final a = int.parse(t.getAttribute('v1') ?? '-1');
-          final b = int.parse(t.getAttribute('v2') ?? '-1');
-          final c = int.parse(t.getAttribute('v3') ?? '-1');
-          if (a < 0 || b < 0 || c < 0 ||
-              a >= vertices.length || b >= vertices.length || c >= vertices.length) {
-            throw const FormatException('3MF enthält ungültige Eckpunkte.');
-          }
-          all.add(_Triangle(vertices[a], vertices[b], vertices[c]));
-        }
-      }
+    final vertices = readThreeMfTriangles(bytes);
+    final faces = <_Triangle>[];
+    for (var i = 0; i < vertices.length; i += 9) {
+      _V3 point(int offset) => _V3(vertices[offset],vertices[offset+1],vertices[offset+2]);
+      faces.add(_Triangle(point(i),point(i+3),point(i+6)));
     }
-    if (all.isEmpty) throw const FormatException('Keine 3MF-Dreiecke gefunden.');
-    return _summarize(all);
+    return _summarize(faces);
   }
 
   static _Mesh _summarize(List<_Triangle> all) {
@@ -637,11 +578,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           Text(m.supports.reason),
           const Text('Bewertung für die Dateiausrichtung. Drehen in der Vorschau ändert die Druckausrichtung nicht.'),
           const SizedBox(height: 12),
-          const Text('Hinweis: Dies ist eine einfache drehbare Geometrievorschau. '
-            'Bei 3MF werden Komponenten, Farbzuweisungen und Transformationen '
-            'noch nicht vollständig ausgewertet. Die Ansicht verändert nicht '
-            'die Originaldatei. Vollständige Druckbarkeit und Passgenauigkeit werden noch '
-            'nicht automatisch geprüft.'),
+          const Text('Originaldatei bleibt unverändert. Stützenhinweis im Slicer prüfen.'),
         ] else if (!loading) ...[
           const SizedBox(height: 32),
           const Icon(Icons.view_in_ar, size: 64),
