@@ -9,6 +9,7 @@ on:
       - in-app-updates
       - filament-scan
       - material-advice
+      - project-optimizer
     paths:
       - 'lib/**'
       - 'test/**'
@@ -160,6 +161,8 @@ jobs:
           import 'package:flutter/material.dart';
           import 'package:flutter_test/flutter_test.dart';
           import 'package:print_optimizer/main.dart';
+          import 'package:shared_preferences/shared_preferences.dart';
+          import 'package:print_optimizer/project_optimizer.dart';
 
           class _Picker extends FilePicker {
             _Picker({this.paddingBytes = 0, this.reportedSize});
@@ -209,6 +212,21 @@ jobs:
           }
 
           void main() {
+            testWidgets('Loaded model leads through questions to a saved recommendation', (tester) async {
+              SharedPreferences.setMockInitialValues({});
+              await loadModel(tester);
+              await tester.tap(find.text('OK'));
+              await tester.pumpAndSettle();
+              expect(find.text('Was ist dir wichtig?'), findsOneWidget);
+              expect(find.text('test.stl'), findsOneWidget);
+              await tester.tap(find.text('Mechanisches Teil / Gebrauchsteil'));
+              await tester.tap(find.text('Speichern'));
+              await tester.pumpAndSettle();
+              expect(find.text('Empfohlenes Material: PETG'), findsOneWidget);
+              expect((await loadPrintProjects()).single.fileName, 'test.stl');
+              await tester.pumpWidget(const SizedBox());
+            });
+
             testWidgets('Imports STL larger than the old 30 MB limit', (tester) async {
               await loadModel(tester, picker: _Picker(paddingBytes: 31 * 1024 * 1024));
               final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
