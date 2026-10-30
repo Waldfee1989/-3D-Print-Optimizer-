@@ -9,6 +9,7 @@ on:
       - in-app-updates
       - filament-scan
       - material-advice
+      - model-tools
       - project-optimizer
 
 permissions:
