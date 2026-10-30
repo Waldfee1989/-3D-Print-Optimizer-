@@ -27,6 +27,7 @@ import 'model_cut.dart';
 import 'app_design.dart';
 import 'studio_projects_page.dart';
 import 'studio_project.dart';
+import 'adapter_page.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -222,6 +223,15 @@ class _HomePageState extends State<HomePage> {
   void openLowStock() => Navigator.push(context,MaterialPageRoute(builder: (_) => LowStockPage(stock: stock,
     threshold: lowStockThreshold,onThresholdChanged: (value) { if (mounted) setState(() => lowStockThreshold = value); })));
 
+  Future<void> openAdapter()async{
+    if(bed==null){await setup();if(!mounted||bed==null)return;}
+    final part=await Navigator.push<PlatePart>(context,MaterialPageRoute(builder:(_)=>const AdapterPage()));
+    if(part==null||!mounted)return;
+    final project=StudioProject(id:DateTime.now().microsecondsSinceEpoch.toString(),name:part.name,
+      printer:printer,slicer:slicer,nozzle:nozzle,bed:bed!,parts:[PlatePlacement(id:'0',part:part,x:bed!.width/2,y:bed!.depth/2)]);
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:pickPlatePart,project:project,openSettings:true)));
+  }
+
   @override Widget build(BuildContext context) => PopScope(
     canPop: !inventoryOpen, onPopInvokedWithResult: (didPop, result) {
       if (!didPop && inventoryOpen) setState(() => inventoryOpen = false);
@@ -239,6 +249,8 @@ class _HomePageState extends State<HomePage> {
         if (!inventoryOpen) ...[
           const SizedBox(height:8),
           StudioHero(onOpen:openModel),
+          const SizedBox(height:10),
+          OutlinedButton.icon(onPressed:openAdapter,icon:const Icon(Icons.mic_none),label:const Text('Adapter nach Maß erstellen')),
           const StudioHeading('Deine Werkzeuge',subtitle:'Vorbereiten, organisieren, loslegen.'),
           StudioTools(children:[
             StudioTool(title:'Druckplatte',subtitle:'Mehrere Teile zusammenstellen',icon:Icons.dashboard_customize_outlined,

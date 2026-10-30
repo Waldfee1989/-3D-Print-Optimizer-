@@ -9,11 +9,13 @@ import 'package:print_optimizer/project_optimizer.dart';
 import 'package:print_optimizer/local_slicer.dart';
 import 'package:print_optimizer/gcode_preview.dart';
 import '../test/geometry_fixtures.dart';
+import 'package:print_optimizer/adapter_page.dart';
 
 void main(){
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
   testWidgets('Installed Android app generates real G-code and restores its complete project',(tester)async{
     await tester.pumpWidget(MaterialApp(theme:studioTheme(),home:const Scaffold(body:Text('Native slicer test'))));await tester.pumpAndSettle();
+    expect(await voiceChannel.invokeMethod<bool>('available'),isA<bool>());
     final p=StudioProject(id:'android_smoke',name:'Android Slicer Test',printer:'Anycubic Kobra S1',slicer:'Anycubic Slicer Next',nozzle:'0.4',
       bed:const PrinterBed(250,250,250),parts:[PlatePlacement(id:'cube',part:PlatePart(name:'cube.stl',vertices:denseCube(1),unitScale:10,width:20,depth:20,height:20),x:110,y:110)],
       recipe:PrintProject(id:'android_smoke',fileName:'cube.stl',dimensions:'20 mm',printer:'Anycubic Kobra S1',slicer:'Anycubic Slicer Next',nozzle:'0.4',surface:'Standard',priority:'Schneller Druck'));

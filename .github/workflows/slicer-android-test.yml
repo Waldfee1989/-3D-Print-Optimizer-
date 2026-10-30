@@ -1,7 +1,7 @@
 name: Slicer auf Android pruefen
 on:
   push:
-    branches: [integrated-slicer]
+    branches: [integrated-slicer, voice-adapter]
     paths: ['lib/**','scripts/**','integration_test/**','test_driver/**','pubspec.yaml','.github/workflows/slicer-android-test.yml']
   workflow_dispatch:
 permissions:
@@ -27,6 +27,7 @@ jobs:
           flutter create . --platforms=android
           python3 scripts/configure_android_updates.py
           python3 scripts/configure_android_geometry.py
+          python3 scripts/configure_android_voice.py
           python3 scripts/configure_android_slicer.py build/slicer-x86/liboptimizer_slicer.so x86_64
           flutter pub get
           python3 scripts/configure_android_sdk.py

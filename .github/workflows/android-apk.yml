@@ -12,6 +12,7 @@ on:
       - model-tools
       - connections-studio
       - integrated-slicer
+      - voice-adapter
       - project-optimizer
 
 permissions:
@@ -53,6 +54,9 @@ jobs:
 
       - name: Lokale Geometrie einrichten
         run: python3 scripts/configure_android_geometry.py
+
+      - name: Optionale Spracheingabe einrichten
+        run: python3 scripts/configure_android_voice.py
 
       - name: Android SDK 36 einstellen
         run: |

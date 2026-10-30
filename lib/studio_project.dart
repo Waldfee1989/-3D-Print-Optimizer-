@@ -17,8 +17,12 @@ class StudioProject {
   final PrinterBed bed;
   final List<PlatePlacement> parts;
   final PrintProject? recipe;
-  StudioProject copy({String? id,String? name,PrintProject? recipe,List<PlatePlacement>? parts})=>StudioProject(
-    id:id??this.id,name:name??this.name,printer:printer,slicer:slicer,nozzle:recipe?.nozzle??nozzle,bed:bed,parts:parts??this.parts,recipe:recipe??this.recipe);
+  StudioProject copy({String? id,String? name,PrintProject? recipe,List<PlatePlacement>? parts}){
+    final selected=recipe??this.recipe;
+    final copiedRecipe=id!=null&&id!=this.id&&selected!=null?PrintProject.fromJson({...selected.toJson(),'id':id}):selected;
+    return StudioProject(id:id??this.id,name:name??this.name,printer:printer,slicer:slicer,
+      nozzle:copiedRecipe?.nozzle??nozzle,bed:bed,parts:parts??this.parts,recipe:copiedRecipe);
+  }
 }
 
 Map<String,dynamic> projectManifest(StudioProject p)=>{
