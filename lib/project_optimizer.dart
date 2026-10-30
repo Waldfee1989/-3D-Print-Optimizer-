@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
+import 'app_design.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'material_advice.dart';
 import 'slicer_export.dart';
@@ -296,9 +297,13 @@ class ProjectRecommendation extends StatelessWidget {
         Row(children: [Icon(Icons.tune, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 10), Expanded(child: Text('Deine Einstellungen', style: Theme.of(context).textTheme.titleLarge))]),
         const SizedBox(height: 12),
-        for (final row in rows.entries) Padding(
-          padding: const EdgeInsets.symmetric(vertical: 7),
-          child: Text('${row.key}: ${row.value}', style: const TextStyle(fontSize: 16))),
+        for (final row in rows.entries) Container(
+          width:double.infinity,margin:const EdgeInsets.only(bottom:6),padding:const EdgeInsets.symmetric(horizontal:14,vertical:12),
+          decoration:BoxDecoration(color:rows.keys.take(3).contains(row.key)?const Color(0xfff0ebff):const Color(0xfff7f6fa),
+            borderRadius:BorderRadius.circular(13)),
+          child:Text('${row.key}: ${row.value}',style:TextStyle(fontSize:15,
+            color:rows.keys.take(3).contains(row.key)?studioPurple:studioInk,
+            fontWeight:rows.keys.take(3).contains(row.key)?FontWeight.w700:FontWeight.w500))),
         if (!standardNozzle) const Text('Weitere Werte: passendes Düsenprofil verwenden.'),
         const Divider(height: 24),
         const Text('Startwerte · Angaben auf deiner Filamentrolle gehen vor.', style: TextStyle(fontSize: 13)),

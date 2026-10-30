@@ -24,6 +24,7 @@ import 'nozzles.dart';
 import 'low_stock.dart';
 import 'help_chat.dart';
 import 'model_cut.dart';
+import 'app_design.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -55,19 +56,7 @@ class OptimizerApp extends StatelessWidget {
   const OptimizerApp({super.key});
   @override Widget build(BuildContext context) => MaterialApp(
     title: '3D Print Optimizer',
-    theme: ThemeData(
-      useMaterial3: true, brightness: Brightness.dark,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff6ee7d8), brightness: Brightness.dark,
-        primary: const Color(0xff6ee7d8), secondary: const Color(0xffb8a6ff), surface: const Color(0xff111b2b)),
-      scaffoldBackgroundColor: const Color(0xff0a1220),
-      appBarTheme: const AppBarTheme(backgroundColor: Color(0xff0a1220), centerTitle: false),
-      cardTheme: CardThemeData(elevation: 0, margin: const EdgeInsets.symmetric(vertical: 6),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22))),
-      inputDecorationTheme: InputDecorationTheme(filled: true,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none)),
-      filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(
-        minimumSize: const Size(48, 52), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)))),
-    ),
+    theme: studioTheme(),
     home: const HomePage(),
   );
 }
@@ -230,20 +219,11 @@ class _HomePageState extends State<HomePage> {
   void openLowStock() => Navigator.push(context,MaterialPageRoute(builder: (_) => LowStockPage(stock: stock,
     threshold: lowStockThreshold,onThresholdChanged: (value) { if (mounted) setState(() => lowStockThreshold = value); })));
 
-  Widget actionCard({required String title, required String subtitle,
-    required IconData icon, required Color color, required VoidCallback onTap}) =>
-    Card(child: ListTile(contentPadding: const EdgeInsets.all(16),
-      leading: Container(padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: color.withValues(alpha: .12), borderRadius: BorderRadius.circular(16)),
-        child: Icon(icon, color: color, size: 28)),
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-      subtitle: Text(subtitle), trailing: const Icon(Icons.chevron_right), onTap: onTap));
-
   @override Widget build(BuildContext context) => PopScope(
     canPop: !inventoryOpen, onPopInvokedWithResult: (didPop, result) {
       if (!didPop && inventoryOpen) setState(() => inventoryOpen = false);
     }, child: Scaffold(
-    appBar: AppBar(title: Text(inventoryOpen ? 'Filamentlager' : '3D Print Optimizer'),
+    appBar: AppBar(title: Text(inventoryOpen ? 'Filamentlager' : 'Print Optimizer'),
       leading: inventoryOpen ? IconButton(tooltip: 'Zur Startseite', icon: const Icon(Icons.arrow_back),
         onPressed: () => setState(() => inventoryOpen = false)) : null,
       actions: [
@@ -254,37 +234,20 @@ class _HomePageState extends State<HomePage> {
     body: SafeArea(top: false, child: prefs == null ? const Center(child: CircularProgressIndicator()) :
       ListView(padding: const EdgeInsets.fromLTRB(20, 8, 20, 24), children: [
         if (!inventoryOpen) ...[
-          const Text('Deine Idee. Dein Druck.', style: TextStyle(fontSize: 29, fontWeight: FontWeight.w800, height: 1.2)),
-          const SizedBox(height: 8),
-          const Text('Vom Modell zu passenden Einstellungen.', style: TextStyle(color: Color(0xffa8b5c9), fontSize: 16)),
-          const SizedBox(height: 24),
-          Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [Color(0xff164b55), Color(0xff24345c)],
-              begin: Alignment.topLeft, end: Alignment.bottomRight),
-            borderRadius: BorderRadius.circular(28), border: Border.all(color: const Color(0xff39747e))),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Icon(Icons.view_in_ar_rounded, size: 48, color: Color(0xff9af4e6)),
-              const SizedBox(height: 16),
-              const Text('Neues Druckprojekt', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 6), const Text('Datei öffnen · Fragen beantworten · Loslegen'),
-              const SizedBox(height: 20),
-              SizedBox(width: double.infinity, child: FilledButton.icon(onPressed: openModel,
-                icon: const Icon(Icons.add), label: const Text('STL / 3MF öffnen'))),
-            ])),
-          const SizedBox(height: 18),
-          actionCard(title: 'Mehrere Teile auf einer Platte',subtitle: 'Dateien hinzufügen und einzeln verschieben',
-            icon: Icons.dashboard_customize_outlined,color: const Color(0xffffc780),
-            onTap: openBuildPlate),
-          actionCard(title: 'Meine Druckprojekte', subtitle: 'Einstellungen wieder öffnen',
-            icon: Icons.folder_copy_outlined, color: const Color(0xffb8a6ff),
-            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrintProjectsPage()))),
-          actionCard(title: 'Meine Düsen',subtitle: 'Bestand und passende Düsenempfehlungen',
-            icon: Icons.settings_input_component_outlined,color: const Color(0xff90c2ff),
-            onTap: () => Navigator.push(context,MaterialPageRoute(builder: (_) => NozzleInventoryPage(printer: printer,installed: nozzle)))),
-          actionCard(title: 'Filamentlager', subtitle: '${stock.length} Rollen · ${reorderFilaments(stock,lowStockThreshold).length} Filamente fast leer',
-            icon: Icons.qr_code_scanner_rounded, color: const Color(0xff6ee7d8),
-            onTap: () => setState(() => inventoryOpen = true)),
-          const SizedBox(height: 12),
+          const SizedBox(height:8),
+          StudioHero(onOpen:openModel),
+          const StudioHeading('Deine Werkzeuge',subtitle:'Vorbereiten, organisieren, loslegen.'),
+          StudioTools(children:[
+            StudioTool(title:'Druckplatte',subtitle:'Mehrere Teile zusammenstellen',icon:Icons.dashboard_customize_outlined,
+              color:const Color(0xffda6b37),onTap:openBuildPlate),
+            StudioTool(title:'Druckprojekte',subtitle:'Gespeicherte Einstellungen',icon:Icons.folder_copy_outlined,
+              color:studioPurple,onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>const PrintProjectsPage()))),
+            StudioTool(title:'Meine Düsen',subtitle:'Dein Bestand, passend zum Druck',icon:Icons.settings_input_component_outlined,
+              color:const Color(0xff3776be),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>NozzleInventoryPage(printer:printer,installed:nozzle)))),
+            StudioTool(title:'Filamentlager',subtitle:'${stock.length} Rollen · ${reorderFilaments(stock,lowStockThreshold).length} nachbestellen',
+              icon:Icons.cyclone_outlined,color:const Color(0xff18867a),onTap:()=>setState(()=>inventoryOpen=true)),
+          ]),
+          const StudioHeading('Dein Drucker'),
           Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
             crossAxisAlignment: CrossAxisAlignment.start, children: [
               Row(children: [const Icon(Icons.print_outlined, size: 20), const SizedBox(width: 10),
@@ -304,7 +267,7 @@ class _HomePageState extends State<HomePage> {
                 label: const Text('Drucker einrichten')),
             ]))),
         ] else ...[
-          const Text('Deine Farben. Dein Vorrat.', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800)),
+          const Text('Dein Material.\nAlles im Blick.', style: TextStyle(fontSize: 30, height:1.15,letterSpacing:-.7,fontWeight: FontWeight.w800)),
           const SizedBox(height: 16),
           FilledButton.icon(onPressed: scanFilament, icon: const Icon(Icons.qr_code_scanner), label: const Text('Barcode scannen')),
           const SizedBox(height: 10),
@@ -624,10 +587,10 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           const SizedBox(height: 12),
           Text(fileName ?? 'Modell', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 12),
-          Container(height: 300, decoration: BoxDecoration(
-            color: Theme.of(context).colorScheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(12)),
-            child: ClipRRect(borderRadius: BorderRadius.circular(12),
+          Container(height: 320, decoration: BoxDecoration(
+            color: const Color(0xff1c1a2d),
+            borderRadius: BorderRadius.circular(24)),
+            child: ClipRRect(borderRadius: BorderRadius.circular(24),
               child: RawGestureDetector(
                 // Claim touches inside the preview so vertical rotation does
                 // not become a ListView scroll. Scrolling outside still works.
@@ -646,12 +609,12 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
                   // Bound raster work while retaining the viewport aspect ratio.
                   final factor = math.min(1.0, 480 / math.max(
                       constraints.maxWidth, constraints.maxHeight));
-                  return _SurfacePreview(mesh: m, angleX: angleX, angleY: angleY,
+                  return CustomPaint(painter: const StudioViewportPainter(),child: _SurfacePreview(mesh: m, angleX: angleX, angleY: angleY,
                     zoom: zoom, showOverhangs: showOverhangs, width: math.max(1, (constraints.maxWidth * factor).round()),
-                    height: math.max(1, (constraints.maxHeight * factor).round()));
+                    height: math.max(1, (constraints.maxHeight * factor).round())));
                 }))))),
           const SizedBox(height: 8),
-          const Text('Mit einem Finger drehen · Mit zwei Fingern zoomen'),
+          const Row(children:[Icon(Icons.touch_app_outlined,size:16,color:studioMuted),SizedBox(width:6),Expanded(child:Text('Drehen · Zoomen',style:TextStyle(color:studioMuted,fontSize:13)))]),
           Text('Zoom: ${(zoom * 100).round()} %'),
           Slider(value: zoom, min: .25, max: 5,
             onChanged: (v) => setState(() => zoom = v)),
@@ -664,7 +627,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
             onChanged: (v) => setState(() => angleX = v)),
           OutlinedButton(onPressed: () => setState(() { angleX = 25; angleY = 30; zoom = 1; }),
             child: const Text('Ansicht zurücksetzen')),
-          const SizedBox(height: 8),
+          const StudioHeading('Größe & Bauraum'),
           Text('Größe: ${(modelScale*100).toStringAsFixed(1)} %'),
           if (printerBed != null &&
             (m.size.x*modelScale > printerBed!.width || m.size.y*modelScale > printerBed!.depth || m.size.z*modelScale > printerBed!.height))
@@ -677,12 +640,13 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           ]),
           const Text('Proportionen bleiben erhalten. Oben als neue STL speichern.'),
           if (Platform.isAndroid) OutlinedButton.icon(onPressed: loading || printerBed == null ? null : cutModel,
-            icon: const Icon(Icons.content_cut),label: const Text('Teilen und Zapfen einfügen')),
+            icon: const Icon(Icons.content_cut),label: const Text('Teilen & verbinden')),
           if (printerBed != null) Text('Bauraum: ${printerBed!.width} × ${printerBed!.depth} × ${printerBed!.height} mm'),
           OutlinedButton.icon(onPressed: loading || printerBed == null ? null : () => Navigator.push(context,MaterialPageRoute(builder: (_) =>
             BuildPlatePage(pickPart: pickPlatePart,bed: printerBed ?? const PrinterBed(250,250,250),printer: widget.printer,initialScale: modelScale,initialPart: PlatePart(name: fileName ?? 'Modell',
               vertices: m.renderVertices,unitScale: m.radius,width: m.size.x,depth: m.size.y,height: m.size.z)))),
             icon: const Icon(Icons.add),label: const Text('Weitere Datei auf Druckplatte hinzufügen')),
+          const StudioHeading('Drucklage & Stützen'),
           SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Überhänge rot anzeigen'),
             value: showOverhangs, onChanged: m.supports.valid ? (value) => setState(() => showOverhangs = value) : null),
           OutlinedButton(onPressed: () => setState(() { angleX = 180; angleY = 0; zoom = 1; }), child: const Text('Unterseite ansehen')),
