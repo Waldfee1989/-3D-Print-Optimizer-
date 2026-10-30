@@ -55,7 +55,8 @@ void main(){
     await tester.pumpWidget(MaterialApp(home:BuildPlatePage(initialPart:cube('A'),pickPart:()async=>cube('B'))));
     await tester.pumpAndSettle();await tester.tap(find.byTooltip('Datei hinzufügen'));await tester.pumpAndSettle();
     await tester.drag(find.byKey(const ValueKey('plate-hit-1')),const Offset(30,0));await tester.pump();
-    await tester.tap(find.text('Speichern'));
+    await tester.tap(find.text('Speichern'));await tester.pumpAndSettle();await tester.tap(find.text('STL exportieren'));
+    await tester.pump();
     for(var i=0;i<100&&picker.captured==null;i++){await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:20)));await tester.pump();}
     expect(picker.captured,isNotNull);
     expect(xRange(picker.captured!,0,12),[first.x-10,first.x+10]);
