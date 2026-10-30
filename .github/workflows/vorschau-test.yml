@@ -263,8 +263,7 @@ jobs:
               await tester.drag(area, const Offset(0, 60));
               await tester.pump();
               final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
-              scroll.position.jumpTo(scroll.position.maxScrollExtent);
-              await tester.pump();
+              await tester.scrollUntilVisible(find.textContaining('Vertikal drehen:'), 200);
               expect(find.textContaining('Vertikal drehen:'), findsOneWidget);
               expect(find.text('Vertikal drehen: 25°'), findsNothing);
               scroll.position.jumpTo(0);
@@ -303,9 +302,7 @@ jobs:
               expect(find.text('Zoom: 100 %'), findsNothing);
               // Lazy ListView children must be built before ensureVisible can find them.
               final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
-              scroll.position.jumpTo(scroll.position.maxScrollExtent);
-              await tester.pump();
-              await tester.ensureVisible(find.text('Ansicht zurücksetzen'));
+              await tester.scrollUntilVisible(find.text('Ansicht zurücksetzen'), 200);
               await tester.tap(find.text('Ansicht zurücksetzen'));
               await tester.pump();
               expect(find.text('Horizontal drehen: 30°'), findsOneWidget);

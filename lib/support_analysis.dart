@@ -3,12 +3,13 @@ import 'dart:typed_data';
 
 class SupportAssessment {
   const SupportAssessment(this.status, this.reason, {this.overhangFaces,
-    this.suggestedAxis = 0, this.overhangFraction = 0, this.suggestedFraction = 0, this.valid = false});
+    this.suggestedAxis = 0, this.overhangFraction = 0, this.suggestedFraction = 0, this.valid = false,this.candidateAreas,this.candidateContacts});
   final String status, reason;
   final Uint8List? overhangFaces;
   final int suggestedAxis;
   final double overhangFraction, suggestedFraction;
   final bool valid;
+  final Float64List? candidateAreas,candidateContacts;
 }
 
 // Exact compact vertex IDs and sorted edge pairs replace the old string map.
@@ -119,7 +120,7 @@ SupportAssessment assessSupports(Float32List vertices, {bool is3mf = false}) {
   return SupportAssessment(hasOverhang ? 'Stützen empfohlen' : 'Voraussichtlich keine Stützen nötig',
     hasOverhang ? 'Überhänge über 50° oberhalb der Grundfläche erkannt. Brücken und Stützbereiche im Slicer prüfen.'
       : 'Keine kritischen Überhänge über 50° erkannt. Material, Brücken und kleine Details im Slicer prüfen.',
-    overhangFaces: flags, suggestedAxis: best, valid: true,
+    overhangFaces: flags, suggestedAxis: best, valid: true,candidateAreas: areas,candidateContacts: contact,
     overhangFraction: areas[0]/totalArea, suggestedFraction: areas[best]/totalArea);
 
 }

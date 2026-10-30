@@ -21,18 +21,19 @@ Map<String, Map<String,dynamic>> createSlicerPresetFiles(PrintProject p) {
   final processName = 'Print Optimizer Druck $short';
   final filamentName = 'Print Optimizer ${a.material} $short';
   const printer = 'Anycubic Kobra S1 0.4 nozzle';
-  final layer = double.parse(a.layer.split(' ').first.replaceAll(',','.'));
-  final fine = layer == .12;
+  final geometry = projectNozzleGeometry(p);
+  final layer = geometry.layer;
   final supports = !p.supportStatus.startsWith('Voraussichtlich keine');
   final process = <String,dynamic>{
     'type': 'process','name': processName,'from': 'User','version': '1.0.0','instantiation': 'true',
     'inherits': '0.20mm Standard @Anycubic Kobra S1 0.4 nozzle',
     'print_settings_id': processName,'compatible_printers': [printer],
-    'layer_height': '$layer','initial_layer_print_height': '0.2',
+    'layer_height': '$layer','initial_layer_print_height': '${geometry.first}',
+    'line_width': '${geometry.line}',
     'initial_layer_speed': '${speeds.first}','initial_layer_infill_speed': '${speeds.first}',
     'wall_loops': '${a.walls}','sparse_infill_density': '${a.infill}%',
-    'sparse_infill_pattern': 'gyroid','top_shell_layers': fine ? '7' : '5',
-    'bottom_shell_layers': fine ? '5' : '4',
+    'sparse_infill_pattern': 'gyroid','top_shell_layers': '${geometry.top}',
+    'bottom_shell_layers': '${geometry.bottom}',
     'top_shell_thickness': '0','bottom_shell_thickness': '0',
     'outer_wall_speed': '${speeds.outer}','inner_wall_speed': '${speeds.inner}',
     'sparse_infill_speed': '${speeds.infill}','internal_solid_infill_speed': '${speeds.infill}',

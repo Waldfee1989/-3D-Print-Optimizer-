@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'material_advice.dart';
 import 'slicer_export.dart';
+import 'printer_setup.dart';
+import 'nozzles.dart';
+import 'help_chat.dart';
 
 const projectStorageKey = 'model_projects_v1';
 
@@ -16,21 +19,23 @@ class PrintProject {
     this.functional = false, this.outdoor = false, this.highLoad = false,
     this.flexible = false, this.warm = false, this.surface = 'Sehr glatt',
     this.priority = 'Maximale Qualität', this.supportStatus = 'Im Slicer prüfen',
-    this.supportReason = 'Keine Geometrieprüfung gespeichert.', this.modelScale = 1, this.orientation = 'Wie in der Datei'});
+    this.supportReason = 'Keine Geometrieprüfung gespeichert.', this.modelScale = 1, this.orientation = 'Wie in der Datei',this.bed});
   final String id, fileName, dimensions, printer, slicer, nozzle;
   final bool functional, outdoor, highLoad, flexible, warm;
   final String surface, priority, supportStatus, supportReason, orientation;
   final double modelScale;
+  final PrinterBed? bed;
   MaterialAdvice get advice => recommendMaterial(functional: functional,
     outdoor: outdoor, highLoad: highLoad, flexible: flexible, warm: warm,
     quality: surface == 'Sehr glatt' ? 'Maximale Qualität' : priority);
   Map<String, dynamic> toJson() => {
-    'modelScale': modelScale, 'orientation': orientation, 'id': id, 'fileName': fileName, 'dimensions': dimensions, 'printer': printer,
+    'bed': bed?.toJson(), 'modelScale': modelScale, 'orientation': orientation, 'id': id, 'fileName': fileName, 'dimensions': dimensions, 'printer': printer,
     'slicer': slicer, 'nozzle': nozzle, 'functional': functional, 'outdoor': outdoor,
     'highLoad': highLoad, 'flexible': flexible, 'warm': warm,
     'surface': surface, 'priority': priority, 'supportStatus': supportStatus, 'supportReason': supportReason,
   };
   factory PrintProject.fromJson(Map<String, dynamic> data) => PrintProject(
+    bed: data['bed'] is Map ? PrinterBed.fromJson(Map<String,dynamic>.from(data['bed'] as Map)) : knownPrinterBed(data['printer'] as String),
     modelScale: (data['modelScale'] as num?)?.toDouble() ?? 1,
     orientation: data['orientation'] as String? ?? 'Wie in der Datei', id: data['id'] as String, fileName: data['fileName'] as String,
     dimensions: data['dimensions'] as String, printer: data['printer'] as String,
@@ -71,18 +76,29 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
   late String surface, priority;
   bool saving = false;
   String? error;
+  List<OwnedNozzle> ownedNozzles = [];
+  late String selectedNozzle = widget.project.nozzle.replaceAll(',','.');
+  String? installedNozzle;
+  Future<void> loadOwnedNozzles() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final rows = await loadNozzles(seedPrinter: prefs.getString('printer') ?? widget.project.printer,seedDiameter: prefs.getString('nozzle') ?? widget.project.nozzle);
+      if (mounted) setState(() { ownedNozzles = rows; installedNozzle = prefs.getString('nozzle') ?? widget.project.nozzle; });
+    } catch (_) { /* Recommendations keep working with the configured nozzle. */ }
+  }
   @override void initState() {
     super.initState();
     final p = widget.project;
     functional = p.functional; outdoor = p.outdoor; highLoad = p.highLoad;
     flexible = p.flexible; warm = p.warm; surface = p.surface; priority = p.priority;
     result = widget.showResult;
+    loadOwnedNozzles();
   }
   PrintProject get current => PrintProject(id: widget.project.id,
     fileName: widget.project.fileName, dimensions: widget.project.dimensions,
     printer: widget.project.printer, slicer: widget.project.slicer,
-    modelScale: widget.project.modelScale, orientation: widget.project.orientation,
-    nozzle: widget.project.nozzle, supportStatus: widget.project.supportStatus,
+    bed: widget.project.bed, modelScale: widget.project.modelScale, orientation: widget.project.orientation,
+    nozzle: selectedNozzle, supportStatus: widget.project.supportStatus,
     supportReason: widget.project.supportReason, functional: functional, outdoor: outdoor,
     highLoad: highLoad, flexible: flexible, warm: warm, surface: surface, priority: priority);
   Future<void> finish() async {
@@ -118,8 +134,14 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
   }
   @override Widget build(BuildContext context) {
     final p = current;
+    final available = <String>{selectedNozzle,for (final n in ownedNozzles)
+      if (n.printer.trim().toLowerCase() == p.printer.trim().toLowerCase() && n.quantity > 0) n.diameter.toString()}.toList();
+    final proposal = recommendOwnedNozzle(ownedNozzles,p.printer,fine: surface == 'Sehr glatt',
+      fast: priority == 'Schneller Druck',functional: functional || highLoad);
     return Scaffold(appBar: AppBar(title: Text(result ? 'Deine Druckempfehlung' : 'Was ist dir wichtig?'),
-      actions: [if (!result) TextButton(onPressed: saving ? null : finish,
+      actions: [IconButton(tooltip: 'Druckhilfe',icon: const Icon(Icons.chat_bubble_outline),
+        onPressed: () => Navigator.push(context,MaterialPageRoute(builder: (_) => HelpChatPage(project: current)))),
+        if (!result) TextButton(onPressed: saving ? null : finish,
         child: Text(saving ? 'Speichert …' : 'Speichern')),
         if (result) PopupMenuButton<String>(tooltip: 'Einstellungen exportieren',
           onSelected: exportSettings, itemBuilder: (_) => [
@@ -133,6 +155,15 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
         Text(p.dimensions),
         const SizedBox(height: 16),
         if (result) ...[
+          if (proposal != null && proposal.diameter != double.tryParse(selectedNozzle)) Card(child: Padding(
+            padding: const EdgeInsets.all(16),child: Column(crossAxisAlignment: CrossAxisAlignment.start,children: [
+              Text('Vorhandene Alternative: ${proposal.diameter} mm · ${proposal.material}'),
+              Text(surface == 'Sehr glatt' ? 'Kleinere Düse für Details; längere Druckzeit.' : 'Größere Düse für gröbere, schnellere Drucke.'),
+              TextButton(onPressed: saving ? null : () async { setState(() => selectedNozzle = proposal.diameter.toString()); await finish(); },
+                child: Text('Mit ${proposal.diameter} mm berechnen')),
+            ]))),
+          if (installedNozzle != null && double.tryParse(selectedNozzle) != double.tryParse(installedNozzle!.replaceAll(',','.')))
+            const Text('Düse vor dem Drucken am Gerät wechseln und im Slicer passend auswählen.'),
           ProjectRecommendation(project: p),
           OutlinedButton(onPressed: () => setState(() => result = false),
             child: const Text('Antworten ändern')),
@@ -149,6 +180,10 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
             onChanged: saving ? null : (v) => setState(() => flexible = v)),
           SwitchListTile(title: const Text('Erhöhte Wärme, z. B. im Auto'), value: warm,
             onChanged: saving ? null : (v) => setState(() => warm = v)),
+          DropdownButtonFormField<String>(initialValue: selectedNozzle,decoration: const InputDecoration(labelText: 'Düse für diese Empfehlung'),
+            items: available.map((d) => DropdownMenuItem(value: d,child: Text('$d mm'))).toList(),
+            onChanged: saving ? null : (v) => setState(() => selectedNozzle = v ?? selectedNozzle)),
+          const SizedBox(height: 16),
           DropdownButtonFormField<String>(initialValue: surface,
             decoration: const InputDecoration(labelText: 'Wie soll die Oberfläche sein?'),
             items: ['Sehr glatt', 'Standard', 'Funktion wichtiger als Optik']
@@ -189,21 +224,29 @@ class _ProjectOptimizerPageState extends State<ProjectOptimizerPage> {
        bridge: 25,first: 20,flowLimit: material == 'PETG' ? 6.0 : 8.0);
 }
 
+({double layer,double first,double line,int top,int bottom}) projectNozzleGeometry(PrintProject p) =>
+  nozzleGeometry(double.tryParse(p.nozzle.replaceAll(',','.')) ?? .4,
+    p.surface == 'Sehr glatt' ? 'Maximale Qualität' : p.priority);
+
 Map<String, String> projectSettings(PrintProject p) {
   final a = p.advice;
   final t = materialTemperatures(a.material);
-  final standardNozzle = double.tryParse(p.nozzle.replaceAll(',', '.')) == .4;
+  final diameter = double.tryParse(p.nozzle.replaceAll(',','.'));
+  final standardNozzle = diameter != null && diameter >= .1 && diameter <= 2;
+  final geometry = projectNozzleGeometry(p);
   final speeds = printSpeeds(p);
   return {
     'Filament': a.material,
     if (t != null) 'Filament-Temperatur': '${t.nozzle} °C',
     if (t != null) 'Druckbett': '${t.bed} °C',
     'Düse': '${p.nozzle} mm',
-    if (standardNozzle) 'Schichthöhe': a.layer,
-    if (standardNozzle) 'Erste Schicht': '0,20 mm · ${speeds.first} mm/s',
+    if (p.bed != null) 'Bauraum': '${p.bed!.width} × ${p.bed!.depth} × ${p.bed!.height} mm',
+    if (standardNozzle) 'Schichthöhe': '${geometry.layer.toStringAsFixed(3).replaceAll('.',',')} mm',
+    if (standardNozzle) 'Erste Schicht': '${geometry.first} mm · ${speeds.first} mm/s',
+    if (standardNozzle) 'Linienbreite': '${geometry.line} mm',
     if (standardNozzle) 'Wände': '${a.walls}',
     if (standardNozzle) 'Füllung': '${a.infill} % · Gyroid',
-    if (standardNozzle) 'Deck-/Bodenschichten': a.layer == '0,12 mm' ? '7 / 5' : '5 / 4',
+    if (standardNozzle) 'Deck-/Bodenschichten': '${geometry.top} / ${geometry.bottom}',
     if (standardNozzle) 'Außenwand': '${speeds.outer} mm/s',
     if (standardNozzle) 'Innenwände': '${speeds.inner} mm/s',
     if (standardNozzle) 'Füllgeschwindigkeit': '${speeds.infill} mm/s',
@@ -218,7 +261,7 @@ Map<String, String> projectSettings(PrintProject p) {
     'Haftung': a.material == 'ASA' ? '8 mm Brim · geeignetes Haftmittel'
       : a.material == 'TPU' ? 'Trennschicht nach Druckplattenfreigabe'
       : a.material == 'PETG' ? 'Trennschicht auf glatter PEI-Platte' : 'Saubere Druckplatte',
-    'Bauraum': a.material == 'ASA' ? 'Geschlossen · geeignete Abluft' : 'Nicht aktiv beheizen',
+    'Bauraumtemperatur': a.material == 'ASA' ? 'Geschlossen · geeignete Abluft' : 'Nicht aktiv beheizen',
     'Stützen': p.supportStatus,
     'Druckausrichtung': p.orientation,
     'Modellgröße': '${(p.modelScale*100).toStringAsFixed(1)} %',
@@ -243,7 +286,8 @@ class ProjectRecommendation extends StatelessWidget {
     final p = project;
     final a = p.advice;
     final rows = projectSettings(p);
-    final standardNozzle = double.tryParse(p.nozzle.replaceAll(',', '.')) == .4;
+    final diameter = double.tryParse(p.nozzle.replaceAll(',','.'));
+  final standardNozzle = diameter != null && diameter >= .1 && diameter <= 2;
     return Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(
       crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [Icon(Icons.tune, color: Theme.of(context).colorScheme.primary),

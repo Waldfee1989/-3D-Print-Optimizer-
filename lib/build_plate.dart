@@ -1,0 +1,338 @@
+import 'dart:async';
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'mesh_renderer.dart';
+import 'model_size_dialog.dart';
+import 'print_geometry.dart';
+import 'support_analysis.dart';
+import 'printer_setup.dart';
+
+class PlatePart {
+  const PlatePart({required this.name,required this.vertices,required this.unitScale,
+    required this.width,required this.depth,required this.height});
+  final String name;
+  final Float32List vertices; // Centered normalized coordinates, all triangles.
+  final double unitScale, width, depth, height; // Original dimensions in mm.
+}
+class PlatePlacement {
+  const PlatePlacement({required this.id,required this.part,required this.x,required this.y,
+    this.scale = 1,this.turns = 0});
+  final String id;
+  final PlatePart part;
+  final double x,y,scale;
+  final int turns;
+  double get width => (turns.isOdd ? part.depth : part.width)*scale;
+  double get depth => (turns.isOdd ? part.width : part.depth)*scale;
+  Rect get bounds => Rect.fromCenter(center: Offset(x,y),width: width,height: depth);
+  PlatePlacement copy({double? x,double? y,double? scale,int? turns}) => PlatePlacement(
+    id: id,part: part,x: x ?? this.x,y: y ?? this.y,scale: scale ?? this.scale,turns: turns ?? this.turns);
+  bool fits(double w,double d,[double h = double.infinity]) => bounds.left >= -1e-6 && bounds.bottom <= d+1e-6 &&
+    bounds.top >= -1e-6 && bounds.right <= w+1e-6 && part.height*scale <= h+1e-6;
+}
+
+PlatePlacement placeNextPart(PlatePart part,List<PlatePlacement> existing,double width,double depth,String id,{double scale = 1,int turns = 0}) {
+  final prototype = PlatePlacement(id: id,part: part,x: 0,y: 0,scale: scale,turns: turns);
+  final xs = <double>[5,for (final p in existing) p.bounds.right+5]..sort();
+  final ys = <double>[5,for (final p in existing) p.bounds.bottom+5]..sort();
+  for (final y in ys) {
+    for (final x in xs) {
+      final next = prototype.copy(x: x+prototype.width/2,y: y+prototype.depth/2);
+      if (next.fits(width,depth) && existing.every((p) => !next.bounds.inflate(2).overlaps(p.bounds))) return next;
+    }
+  }
+  return prototype.copy(x: width/2,y: depth/2);
+}
+
+(List<PlatePlacement>,int) autoOrientPlate((List<PlatePlacement>,double,double,double) request) {
+  final output = <PlatePlacement>[];
+  var unknown = 0;
+  for (final placed in request.$1) {
+    var part = placed.part;
+    var turns = 0;
+    final assessment = assessSupports(part.vertices);
+    if (!assessment.valid) { unknown++; turns = placed.turns; }
+    else {
+      final axis = fittingPrintOrientation(part.vertices,assessment,part.unitScale*placed.scale,PrinterBed(request.$2,request.$3,request.$4));
+      if (axis == null) { unknown++; output.add(placeNextPart(part,output,request.$2,request.$3,placed.id,scale: placed.scale,turns: placed.turns)); continue; }
+      final v = rotatePrintVertices(part.vertices,axis);
+      var minX = double.infinity,minY = double.infinity,minZ = double.infinity;
+      var maxX = double.negativeInfinity,maxY = double.negativeInfinity,maxZ = double.negativeInfinity;
+      for (var i = 0; i < v.length; i += 3) {
+        minX = math.min(minX,v[i]); maxX = math.max(maxX,v[i]);
+        minY = math.min(minY,v[i+1]); maxY = math.max(maxY,v[i+1]);
+        minZ = math.min(minZ,v[i+2]); maxZ = math.max(maxZ,v[i+2]);
+      }
+      part = PlatePart(name: part.name,vertices: v,unitScale: part.unitScale,
+        width: (maxX-minX)*part.unitScale,depth: (maxY-minY)*part.unitScale,height: (maxZ-minZ)*part.unitScale);
+    }
+    output.add(placeNextPart(part,output,request.$2,request.$3,placed.id,scale: placed.scale,turns: turns));
+  }
+  return (output,unknown);
+}
+
+Uint8List encodePlateStl(List<PlatePlacement> placements) {
+  final count = placements.fold<int>(0,(a,p) => a+p.part.vertices.length~/9);
+  if (count == 0 || 84+count*50 > 100*1024*1024) throw const FormatException('Gemeinsame STL ist größer als 100 MB oder leer.');
+  final bytes = Uint8List(84+count*50);
+  final data = ByteData.sublistView(bytes);
+  const label = '3D Print Optimizer - Druckplatte - mm';
+  bytes.setRange(0,label.length,label.codeUnits); data.setUint32(80,count,Endian.little);
+  var f = 0;
+  for (final placed in placements) {
+    final v = placed.part.vertices;
+    if (v.length % 9 != 0 || !placed.scale.isFinite || placed.scale <= 0 ||
+        !placed.x.isFinite || !placed.y.isFinite || !placed.part.unitScale.isFinite || placed.part.unitScale <= 0) {
+      throw const FormatException('Ungültige Teileanordnung.');
+    }
+    var floor = double.infinity;
+    for (var i = 2; i < v.length; i += 3) { floor = math.min(floor,v[i]); }
+    final scale = placed.part.unitScale*placed.scale;
+    final angle = placed.turns*math.pi/2, c = math.cos(angle), s = math.sin(angle);
+    for (var i = 0; i < v.length; i += 9) {
+      final at = 84+f++*50;
+      for (var k = 0; k < 9; k += 3) {
+        final x = (v[i+k]*c-v[i+k+1]*s)*scale+placed.x;
+        final y = (v[i+k]*s+v[i+k+1]*c)*scale+placed.y;
+        final z = (v[i+k+2]-floor)*scale;
+        for (final entry in [(0,x),(4,y),(8,z)]) {
+          if (!entry.$2.isFinite || entry.$2.abs() > 3.402823466e38) throw const FormatException('Ungültige Exportkoordinaten.');
+          data.setFloat32(at+12+k*4+entry.$1,entry.$2,Endian.little);
+        }
+      }
+      // Zero normals are legal in STL; slicers derive them from the winding.
+    }
+  }
+  return bytes;
+}
+
+class BuildPlatePage extends StatefulWidget {
+  const BuildPlatePage({super.key,required this.pickPart,this.initialPart,this.initialScale = 1,this.bed = const PrinterBed(250,250,250),this.printer = 'Anycubic Kobra S1'});
+  final Future<PlatePart?> Function() pickPart;
+  final PlatePart? initialPart;
+  final double initialScale;
+  final PrinterBed bed;
+  final String printer;
+  @override State<BuildPlatePage> createState() => _BuildPlatePageState();
+}
+class _BuildPlatePageState extends State<BuildPlatePage> {
+  List<PlatePlacement> parts = [];
+  final images = <String,ui.Image>{};
+  final thumbnailTokens = <String,int>{};
+  List<PlatePlacement>? beforeOrientation;
+  late double bedWidth = widget.bed.width,bedDepth = widget.bed.depth;
+  int selected = -1,counter = 0;
+  bool busy = false;
+  String? error;
+  @override void initState() {
+    super.initState();
+    if (widget.initialPart != null) addPart(widget.initialPart!,widget.initialScale);
+  }
+  void addPart(PlatePart part,double scale) {
+    final id = '${counter++}';
+    final placed = placeNextPart(part,parts,bedWidth,bedDepth,id,scale: scale);
+    beforeOrientation = null; parts = [...parts,placed]; selected = parts.length-1;
+    unawaited(thumbnail(placed));
+  }
+  Future<void> thumbnail(PlatePlacement placed) async {
+    final token = (thumbnailTokens[placed.id] ?? 0)+1; thumbnailTokens[placed.id] = token;
+    try {
+      final request = MeshRenderRequest(placed.part.vertices,160,160,0,0,1);
+      final pixels = await compute(renderMesh,request);
+      if (!mounted) return;
+      final completer = Completer<ui.Image>();
+      ui.decodeImageFromPixels(pixels,160,160,ui.PixelFormat.rgba8888,completer.complete);
+      final image = await completer.future;
+      if (!mounted || thumbnailTokens[placed.id] != token || !parts.any((p) => p.id == placed.id)) { image.dispose(); return; }
+      final old = images[placed.id];
+      setState(() => images[placed.id] = image);
+      if (old != null) WidgetsBinding.instance.addPostFrameCallback((_) => old.dispose());
+    } catch (_) { /* Outline remains usable if the thumbnail cannot be rendered. */ }
+  }
+  Future<void> pick() async {
+    setState(() { busy = true; error = null; });
+    try {
+      final part = await widget.pickPart();
+      if (!mounted || part == null) return;
+      final faces = parts.fold<int>(0,(a,p) => a+p.part.vertices.length~/9)+part.vertices.length~/9;
+      if (84+faces*50 > 100*1024*1024) throw const FormatException('Alle Teile zusammen überschreiten 100 MB als STL.');
+      setState(() => addPart(part,1));
+    } catch (_) { if (mounted) setState(() => error = 'Datei konnte nicht hinzugefügt werden. Größe oder Format prüfen.'); }
+    finally { if (mounted) setState(() => busy = false); }
+  }
+  void change(PlatePlacement next) => changeAt(selected,next);
+  void changeAt(int index,PlatePlacement next) => setState(() { parts = [...parts]..[index] = next; });
+  Future<void> align() async {
+    setState(() { busy = true; error = null; });
+    try {
+      final previous = parts;
+      final result = await compute(autoOrientPlate,(List<PlatePlacement>.unmodifiable(parts),bedWidth,bedDepth,widget.bed.height));
+      if (!mounted) return;
+      setState(() { beforeOrientation = previous; parts = result.$1; });
+      for (final p in parts) { unawaited(thumbnail(p)); }
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result.$2 == 0
+        ? 'Alle Teile geometrisch ausgerichtet und neu angeordnet.' : '${result.$2} Teile mit unklarer Geometrie: Drucklage im Slicer prüfen.')));
+    } catch (_) { if (mounted) setState(() => error = 'Automatisches Ausrichten fehlgeschlagen. Anordnung bleibt erhalten.'); }
+    finally { if (mounted) setState(() => busy = false); }
+  }
+  PlatePlacement clamp(PlatePlacement p) => p.copy(
+    x: p.width <= bedWidth ? p.x.clamp(p.width/2,bedWidth-p.width/2).toDouble() : p.x,
+    y: p.depth <= bedDepth ? p.y.clamp(p.depth/2,bedDepth-p.depth/2).toDouble() : p.y);
+  Future<void> resize() async {
+    final p = parts[selected];
+    final scale = await showDialog<double>(context: context,builder: (_) => ModelSizeDialog(
+      scale: p.scale,width: p.turns.isOdd ? p.part.depth : p.part.width,editWidth: false));
+    if (mounted && scale != null) change(clamp(p.copy(scale: scale)));
+  }
+  Future<void> position() async {
+    final p = parts[selected];
+    final xy = await showDialog<(double,double)>(context: context,builder: (_) => _CoordinatesDialog(
+      title: 'Position der Teilmitte',first: p.x,second: p.y,firstLabel: 'X in mm',secondLabel: 'Y in mm'));
+    if (mounted && xy != null) change(p.copy(x: xy.$1,y: xy.$2));
+  }
+  bool get overlaps {
+    for (var i = 0; i < parts.length; i++) {
+      for (var j = i+1; j < parts.length; j++) { if (parts[i].bounds.overlaps(parts[j].bounds)) return true; }
+    }
+    return false;
+  }
+  Future<void> save() async {
+    if (overlaps) {
+      final yes = await showDialog<bool>(context: context,builder: (ctx) => AlertDialog(
+        title: const Text('Platzbereiche überlappen'),
+        content: const Text('Die Begrenzungsrechtecke überlappen. Die tatsächlichen Konturen und Abstände im Slicer prüfen.'),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx,false),child: const Text('Anpassen')),
+          FilledButton(onPressed: () => Navigator.pop(ctx,true),child: const Text('Trotzdem speichern'))]));
+      if (yes != true || !mounted) return;
+    }
+    setState(() { busy = true; error = null; });
+    try {
+      final bytes = await compute(encodePlateStl,List<PlatePlacement>.unmodifiable(parts));
+      if (!mounted) return;
+      final target = await FilePicker.platform.saveFile(dialogTitle: 'Druckplatte speichern',
+        fileName: '3DPrint_Druckplatte.stl',type: FileType.custom,allowedExtensions: ['stl'],bytes: bytes);
+      if (target == null) return;
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) await File(target).writeAsBytes(bytes,flush: true);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Alle Teile als neue STL gespeichert.')));
+    } catch (_) { if (mounted) setState(() => error = 'Druckplatte konnte nicht gespeichert werden.'); }
+    finally { if (mounted) setState(() => busy = false); }
+  }
+  @override void dispose() { for (final image in images.values) { image.dispose(); } super.dispose(); }
+  @override Widget build(BuildContext context) {
+    final outOfBounds = parts.any((p) => !p.fits(bedWidth,bedDepth,widget.bed.height));
+    return Scaffold(appBar: AppBar(title: const Text('Druckplatte'),actions: [
+      IconButton(tooltip: 'Datei hinzufügen',onPressed: busy ? null : pick,icon: const Icon(Icons.add)),
+      TextButton(onPressed: busy || parts.isEmpty || outOfBounds ? null : save,child: const Text('Speichern')),
+
+    ]),body: SafeArea(top: false,child: ListView(padding: const EdgeInsets.all(16),children: [
+      Text('${widget.printer}: ${bedWidth.toStringAsFixed(0)} × ${bedDepth.toStringAsFixed(0)} × ${widget.bed.height.toStringAsFixed(0)} mm'),
+      const Text('Teil antippen und verschieben. Weitere Datei oben mit + hinzufügen.'),
+      const SizedBox(height: 12),
+      FilledButton.icon(onPressed: busy || parts.isEmpty ? null : align,icon: const Icon(Icons.auto_fix_high),label: const Text('Automatisch ausrichten')),
+      if (beforeOrientation != null) TextButton(onPressed: busy ? null : () {
+        setState(() { parts = beforeOrientation!; beforeOrientation = null; selected = parts.isEmpty ? -1 : 0; });
+        for (final p in parts) { unawaited(thumbnail(p)); }
+      },child: const Text('Ausrichtung rückgängig')),
+      LayoutBuilder(builder: (context,constraints) {
+        final pixelsPerMm = constraints.maxWidth/bedWidth;
+        return AspectRatio(aspectRatio: bedWidth/bedDepth,child: ClipRRect(borderRadius: BorderRadius.circular(16),
+          child: Stack(clipBehavior: Clip.hardEdge,children: [
+            Positioned.fill(child: CustomPaint(painter: _PlateGrid(bedWidth,bedDepth))),
+            for (var i = 0; i < parts.length; i++) ...[
+              if (images[parts[i].id] != null) Positioned(
+                left: (parts[i].x-parts[i].part.unitScale*parts[i].scale/.85)*pixelsPerMm,
+                top: (bedDepth-parts[i].y-parts[i].part.unitScale*parts[i].scale/.85)*pixelsPerMm,
+                width: parts[i].part.unitScale*parts[i].scale/.425*pixelsPerMm,
+                height: parts[i].part.unitScale*parts[i].scale/.425*pixelsPerMm,
+                child: IgnorePointer(child: Transform.rotate(angle: -parts[i].turns*math.pi/2,
+                  child: RawImage(image: images[parts[i].id],fit: BoxFit.fill)))),
+              Positioned(left: parts[i].bounds.left*pixelsPerMm,top: (bedDepth-parts[i].bounds.bottom)*pixelsPerMm,
+                width: math.max(16,parts[i].width*pixelsPerMm),height: math.max(16,parts[i].depth*pixelsPerMm),
+                child: GestureDetector(key: ValueKey('plate-hit-$i'),behavior: HitTestBehavior.opaque,
+                  onTap: () => setState(() => selected = i),
+                  onPanStart: busy ? null : (_) => setState(() => selected = i),
+                  onPanUpdate: busy ? null : (event) => changeAt(i,clamp(parts[i].copy(
+                    x: parts[i].x+event.delta.dx/pixelsPerMm,y: parts[i].y-event.delta.dy/pixelsPerMm))),
+                  child: DecoratedBox(decoration: BoxDecoration(
+                    border: Border.all(color: i == selected ? const Color(0xff6ee7d8) : const Color(0xff8294b5),width: i == selected ? 2 : 1),
+                    color: images[parts[i].id] == null ? const Color(0x333c99bd) : null),
+                    child: Align(alignment: Alignment.topLeft,child: Text('${i+1}',style: const TextStyle(color: Colors.white,fontWeight: FontWeight.bold)))))),
+            ],
+          ])));
+      }),
+      if (busy) const LinearProgressIndicator(),
+      if (error != null) Text(error!,style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      if (outOfBounds) Text('Mindestens ein Teil passt nicht in den Bauraum. Größe, Drucklage oder Position ändern.',style: TextStyle(color: Theme.of(context).colorScheme.error)),
+      if (overlaps) const Text('Platzbereiche überlappen – Konturen und Abstände prüfen.'),
+      if (parts.isEmpty) Padding(padding: const EdgeInsets.all(24),child: FilledButton.icon(
+        onPressed: busy ? null : pick,icon: const Icon(Icons.add),label: const Text('Erste Datei hinzufügen'))),
+      if (selected >= 0 && selected < parts.length) ...[
+        const SizedBox(height: 12),Text('Ausgewählt: ${parts[selected].part.name}',style: Theme.of(context).textTheme.titleMedium),
+        Text('X ${parts[selected].x.toStringAsFixed(1)} · Y ${parts[selected].y.toStringAsFixed(1)} mm · Größe ${(parts[selected].scale*100).toStringAsFixed(1)} %'),
+        Wrap(spacing: 8,runSpacing: 8,children: [
+          OutlinedButton(onPressed: busy ? null : position,child: const Text('X / Y eingeben')),
+          OutlinedButton(onPressed: busy ? null : resize,child: const Text('Größe ändern')),
+          OutlinedButton(onPressed: busy ? null : () => change(clamp(parts[selected].copy(turns: (parts[selected].turns+1)%4))),child: const Text('90° drehen')),
+        ]),
+      ],
+      const SizedBox(height: 12),
+      for (var i = 0; i < parts.length; i++) Card(child: ListTile(
+        selected: i == selected,leading: CircleAvatar(child: Text('${i+1}')),title: Text(parts[i].part.name),
+        subtitle: Text('${parts[i].width.toStringAsFixed(1)} × ${parts[i].depth.toStringAsFixed(1)} × ${(parts[i].part.height*parts[i].scale).toStringAsFixed(1)} mm'),
+        onTap: () => setState(() => selected = i),trailing: IconButton(tooltip: 'Teil entfernen',onPressed: busy ? null : () {
+          final old = parts[i];
+          setState(() { beforeOrientation = null; parts = [...parts]..removeAt(i); selected = parts.isEmpty ? -1 : math.min(i,parts.length-1); });
+          final image = images.remove(old.id);
+          if (image != null) WidgetsBinding.instance.addPostFrameCallback((_) => image.dispose());
+        },icon: const Icon(Icons.close)))),
+      const Text('STL speichert Geometrie und Positionen, keine 3MF-Farben oder Materialzuweisungen. Vor dem Drucken im Slicer prüfen.'),
+    ])));
+  }
+}
+class _PlateGrid extends CustomPainter {
+  _PlateGrid(this.width,this.depth);
+  final double width,depth;
+  @override void paint(Canvas canvas,Size size) {
+    canvas.drawRect(Offset.zero & size,Paint()..color = const Color(0xff182538));
+    final paint = Paint()..color = const Color(0xff2d4058)..strokeWidth = 1;
+    final step = math.max(10,(math.max(width,depth)/50/10).ceil()*10).toDouble();
+    for (var x = 0.0; x <= width; x += step) canvas.drawLine(Offset(x/width*size.width,0),Offset(x/width*size.width,size.height),paint);
+    for (var y = 0.0; y <= depth; y += step) canvas.drawLine(Offset(0,y/depth*size.height),Offset(size.width,y/depth*size.height),paint);
+  }
+  @override bool shouldRepaint(_PlateGrid old) => width != old.width || depth != old.depth;
+}
+class _CoordinatesDialog extends StatefulWidget {
+  const _CoordinatesDialog({required this.title,required this.first,required this.second,
+    required this.firstLabel,required this.secondLabel,this.positive = false});
+  final String title,firstLabel,secondLabel;
+  final double first,second;
+  final bool positive;
+  @override State<_CoordinatesDialog> createState() => _CoordinatesDialogState();
+}
+class _CoordinatesDialogState extends State<_CoordinatesDialog> {
+  final form = GlobalKey<FormState>();
+  late final first = TextEditingController(text: widget.first.toStringAsFixed(2));
+  late final second = TextEditingController(text: widget.second.toStringAsFixed(2));
+  double? number(String? text) => double.tryParse((text ?? '').trim().replaceAll(',','.'));
+  String? validate(String? text) {
+    final value = number(text);
+    return value == null || !value.isFinite || value.abs() > 100000 || (widget.positive && value < 1)
+      ? 'Bitte einen gültigen Millimeterwert eingeben.' : null;
+  }
+  @override void dispose() { first.dispose(); second.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) => AlertDialog(title: Column(mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,children: [Text(widget.title),
+      FilledButton(onPressed: () {
+        if (form.currentState!.validate()) Navigator.pop(context,(number(first.text)!,number(second.text)!));
+      },child: const Text('Übernehmen'))]),content: Form(key: form,child: Column(mainAxisSize: MainAxisSize.min,children: [
+        TextFormField(controller: first,decoration: InputDecoration(labelText: widget.firstLabel),validator: validate,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true,signed: true)),
+        const SizedBox(height: 12),
+        TextFormField(controller: second,decoration: InputDecoration(labelText: widget.secondLabel),validator: validate,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true,signed: true)),
+      ])));
+}

@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'support_analysis.dart';
+import 'printer_setup.dart';
 
 const printOrientationNames = [
   'Wie in der Datei', '180° um X gedreht', '−90° um Y gedreht',
@@ -8,17 +9,48 @@ const printOrientationNames = [
 ];
 
 Float32List rotatePrintVertices(Float32List source, int axis) {
-  if (axis < 0 || axis > 5 || source.length % 3 != 0) throw const FormatException('Ungültige Drucklage.');
+  if (axis < 0 || axis > 11 || source.length % 3 != 0) throw const FormatException('Ungültige Drucklage.');
   final out = Float32List(source.length);
   for (var i = 0; i < source.length; i += 3) {
     final x = source[i], y = source[i+1], z = source[i+2];
-    final p = switch(axis) {
+    var p = switch(axis%6) {
       1 => (x,-y,-z), 2 => (-z,y,x), 3 => (z,y,-x),
       4 => (x,-z,y), 5 => (x,z,-y), _ => (x,y,z),
     };
+    if (axis >= 6) p = (-p.$2,p.$1,p.$3);
     out[i] = p.$1; out[i+1] = p.$2; out[i+2] = p.$3;
   }
   return out;
+}
+
+int? fittingPrintOrientation(Float32List vertices,SupportAssessment assessment,double unitScale,PrinterBed? bed) {
+  if (!assessment.valid) return null;
+  if (bed == null) return assessment.suggestedAxis;
+  var minX = double.infinity,minY = double.infinity,minZ = double.infinity;
+  var maxX = double.negativeInfinity,maxY = double.negativeInfinity,maxZ = double.negativeInfinity;
+  for (var i = 0; i < vertices.length; i += 3) {
+    minX = math.min(minX,vertices[i]); maxX = math.max(maxX,vertices[i]);
+    minY = math.min(minY,vertices[i+1]); maxY = math.max(maxY,vertices[i+1]);
+    minZ = math.min(minZ,vertices[i+2]); maxZ = math.max(maxZ,vertices[i+2]);
+  }
+  final x = (maxX-minX)*unitScale,y = (maxY-minY)*unitScale,z = (maxZ-minZ)*unitScale;
+  final areas = assessment.candidateAreas!,contact = assessment.candidateContacts!;
+  int? best;
+  for (var axis = 0; axis < 12; axis++) {
+    final base = axis%6;
+    var dims = base < 2 ? (x,y,z) : base < 4 ? (z,y,x) : (x,z,y);
+    if (axis >= 6) dims = (dims.$2,dims.$1,dims.$3);
+    if (dims.$1 > bed.width+1e-5 || dims.$2 > bed.depth+1e-5 || dims.$3 > bed.height+1e-5) continue;
+    if (best == null || areas[base] < areas[best%6]-1e-8 ||
+        ((areas[base]-areas[best%6]).abs() < 1e-8 && contact[base] > contact[best%6]+1e-8)) best = axis;
+  }
+  return best;
+}
+
+(Float32List,SupportAssessment,(double,double,double)) orientForPrinter((Float32List,SupportAssessment,double,PrinterBed?) request) {
+  final axis = fittingPrintOrientation(request.$1,request.$2,request.$3,request.$4);
+  if (axis == null) throw const FormatException('Keine der geprüften Drucklagen passt in den Bauraum. Modell verkleinern oder teilen.');
+  return orientPrintModel((request.$1,axis));
 }
 
 (Float32List, SupportAssessment, (double,double,double)) orientPrintModel((Float32List,int) request) {
