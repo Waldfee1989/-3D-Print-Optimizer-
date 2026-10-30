@@ -13,12 +13,14 @@ import 'mesh_renderer.dart';
 
 const voiceChannel=MethodChannel('print_optimizer/voice');
 class AdapterPage extends StatefulWidget {
-  const AdapterPage({super.key,this.recognize});
+  const AdapterPage({super.key,this.recognize,this.initialDraft});
   final Future<String?> Function()? recognize;
+  final AdapterDraft? initialDraft;
   @override State<AdapterPage> createState()=>_AdapterPageState();
 }
 class _AdapterPageState extends State<AdapterPage>{
-  final draft=AdapterDraft(),answer=TextEditingController();
+  late final draft=widget.initialDraft??AdapterDraft();
+  final answer=TextEditingController();
   DiameterKind? kind;PlatePart? created;
   String? error,transcript;bool busy=false;
   void apply(String text){

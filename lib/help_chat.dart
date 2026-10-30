@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'project_optimizer.dart';
 
 String answerPrintHelp(String question,PrintProject? project) {
@@ -17,23 +18,37 @@ String answerPrintHelp(String question,PrintProject? project) {
   if (q.contains('zapfen') || q.contains('schneid') || q.contains('verbind') || q.contains('gewinde') || q.contains('klick') || q.contains('teil')) return 'Unter „Teilen & verbinden“ wählst du ohne Verbindung, Zapfen, Schraubgewinde oder Klickverschluss. Ein Gewinde verbindet die Teile durch Drehen; es ist ein eigenes druckbares Profil und keine Normschraube. Klickverschlüsse nutzen zwei geschlitzte Rastzapfen mit Haltekante. Jede Aufnahme braucht ausreichend massives Material. Spiel, Material und Drucklage beeinflussen die Passung. Erst einen kleinen Probedruck machen; beide Teile immer gleich skalieren.';
   return 'Ich bin eine Offline-Druckhilfe mit hinterlegten Antworten, kein frei antwortender KI-Dienst. Frage mich nach Stützen, Temperaturen, Füllung, Düsen, Slicer-Import, Größe, Druckplatte oder Nachbestellen.';
 }
+Uri printWebSearchUri(String question)=>Uri.https('www.google.com','/search',{'q':'3D Druck ${question.trim()}','hl':'de'});
+
 class HelpChatPage extends StatefulWidget {
-  const HelpChatPage({super.key,this.project});
+  const HelpChatPage({super.key,this.project,this.openSearch});
   final PrintProject? project;
+  final Future<bool> Function(Uri)? openSearch;
   @override State<HelpChatPage> createState() => _HelpChatPageState();
 }
 class _HelpChatPageState extends State<HelpChatPage> {
   final input = TextEditingController(), scroll = ScrollController();
+  String? lastQuestion;
   final messages = <(bool,String)>[(false,'Wobei brauchst du Hilfe? Ich beantworte App- und Druckfragen aus einer hinterlegten Offline-Hilfe.')];
   void ask(String text) {
     if (text.trim().isEmpty) return;
     setState(() { messages.add((true,text.trim())); messages.add((false,answerPrintHelp(text,widget.project))); if (messages.length > 100) messages.removeRange(0,2); });
+    lastQuestion=text.trim();
     input.clear();
     WidgetsBinding.instance.addPostFrameCallback((_) { if (scroll.hasClients) scroll.animateTo(scroll.position.maxScrollExtent,duration: const Duration(milliseconds: 200),curve: Curves.easeOut); });
   }
+  Future<void> searchWeb()async{
+    final question=input.text.trim().isNotEmpty?input.text.trim():lastQuestion;
+    if(question==null||question.isEmpty){ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Zuerst eine Frage eingeben.')));return;}
+    try{
+      final uri=printWebSearchUri(question);
+      final opened=await(widget.openSearch?.call(uri)??launchUrl(uri,mode:LaunchMode.externalApplication));
+      if(!opened&&mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Browser konnte nicht geöffnet werden.')));
+    }catch(_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Websuche konnte nicht geöffnet werden.')));}
+  }
   @override void dispose() { input.dispose(); scroll.dispose(); super.dispose(); }
-  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Druckhilfe'),actions: [IconButton(tooltip: 'Open-Source-Lizenzen',onPressed: () => showLicensePage(context: context),icon: const Icon(Icons.info_outline))]),body: SafeArea(top: false,child: Column(children: [
-    const Padding(padding: EdgeInsets.all(8),child: Text('Offline · hinterlegte Antworten · keine Übertragung')),
+  @override Widget build(BuildContext context) => Scaffold(appBar: AppBar(title: const Text('Druckhilfe'),actions: [IconButton(tooltip:'Im Web suchen',onPressed:searchWeb,icon:const Icon(Icons.travel_explore)),IconButton(tooltip: 'Open-Source-Lizenzen',onPressed: () => showLicensePage(context: context),icon: const Icon(Icons.info_outline))]),body: SafeArea(top: false,child: Column(children: [
+    const Padding(padding: EdgeInsets.all(8),child: Text('Offline-Hilfe · Websuche öffnet deinen Browser')),
     Expanded(child: ListView(controller: scroll,padding: const EdgeInsets.all(16),children: [
       for (final message in messages) Align(alignment: message.$1 ? Alignment.centerRight : Alignment.centerLeft,
         child: Container(margin: const EdgeInsets.symmetric(vertical: 5),padding: const EdgeInsets.all(14),
