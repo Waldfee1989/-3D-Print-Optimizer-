@@ -44,13 +44,13 @@ jobs:
       - name: Android-Updateinstallation einrichten
         run: python3 scripts/configure_android_updates.py
 
-      - name: Lokale Geometrie einrichten
-        run: python3 scripts/configure_android_geometry.py
-
       - name: Feste Android-Signierung einrichten
         env:
           ANDROID_SIGNING_CONFIG: ${{ secrets.ANDROID_SIGNING_CONFIG }}
         run: python3 scripts/configure_android_signing.py
+
+      - name: Lokale Geometrie einrichten
+        run: python3 scripts/configure_android_geometry.py
 
       - name: Android SDK 36 einstellen
         run: |

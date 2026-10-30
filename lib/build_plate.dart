@@ -132,6 +132,7 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
   List<PlatePlacement>? beforeOrientation;
   late double bedWidth = widget.bed.width,bedDepth = widget.bed.depth;
   int selected = -1,counter = 0;
+  int? movingPointer;
   bool busy = false;
   String? error;
   @override void initState() {
@@ -274,15 +275,26 @@ class _BuildPlatePageState extends State<BuildPlatePage> {
                   child: RawImage(image: images[parts[i].id],fit: BoxFit.fill)))),
               Positioned(left: parts[i].bounds.left*pixelsPerMm,top: (bedDepth-parts[i].bounds.bottom)*pixelsPerMm,
                 width: math.max(16,parts[i].width*pixelsPerMm),height: math.max(16,parts[i].depth*pixelsPerMm),
-                child: GestureDetector(key: ValueKey('plate-hit-$i'),dragStartBehavior: DragStartBehavior.down,behavior: HitTestBehavior.opaque,
-                  onTap: () => setState(() => selected = i),
-                  onPanStart: busy ? null : (_) => setState(() => selected = i),
-                  onPanUpdate: busy ? null : (event) => changeAt(i,clamp(parts[i].copy(
-                    x: parts[i].x+event.delta.dx/pixelsPerMm,y: parts[i].y-event.delta.dy/pixelsPerMm))),
+                child: RawGestureDetector(key: ValueKey('plate-hit-$i'),behavior: HitTestBehavior.opaque,
+                  gestures: {EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(
+                    () => EagerGestureRecognizer(), (_) {})},
+                  child: Listener(behavior: HitTestBehavior.opaque,
+                  onPointerDown: busy ? null : (event) {
+                    if (movingPointer != null) return;
+                    movingPointer = event.pointer;
+                    setState(() => selected = i);
+                  },
+                  onPointerMove: busy ? null : (event) {
+                    if (movingPointer != event.pointer) return;
+                    changeAt(i,clamp(parts[i].copy(
+                      x: parts[i].x+event.delta.dx/pixelsPerMm,y: parts[i].y-event.delta.dy/pixelsPerMm)));
+                  },
+                  onPointerUp: (event) { if (movingPointer == event.pointer) movingPointer = null; },
+                  onPointerCancel: (event) { if (movingPointer == event.pointer) movingPointer = null; },
                   child: DecoratedBox(decoration: BoxDecoration(
                     border: Border.all(color: i == selected ? const Color(0xff6ee7d8) : const Color(0xff8294b5),width: i == selected ? 2 : 1),
                     color: images[parts[i].id] == null ? const Color(0x333c99bd) : null),
-                    child: Align(alignment: Alignment.topLeft,child: Text('${i+1}',style: const TextStyle(color: Colors.white,fontWeight: FontWeight.bold)))))),
+                    child: Align(alignment: Alignment.topLeft,child: Text('${i+1}',style: const TextStyle(color: Colors.white,fontWeight: FontWeight.bold))))))),
             ],
           ])));
       }),
