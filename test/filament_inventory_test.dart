@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:print_optimizer/filament_inventory.dart';
 import 'package:print_optimizer/main.dart';
+import 'scroll_helpers.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -43,11 +44,11 @@ void main() {
 
   Future<void> openCode(WidgetTester tester, String code) async {
     if (find.text('Filamentcode eingeben').evaluate().isEmpty) {
-      await tester.scrollUntilVisible(find.text('Filamentlager'), 200);
+      await reveal(tester,find.text('Filamentlager'));
       await tester.tap(find.text('Filamentlager'));
       await tester.pumpAndSettle();
     }
-    await tester.scrollUntilVisible(find.text('Filamentcode eingeben'), 200);
+    await reveal(tester,find.text('Filamentcode eingeben'));
     await tester.tap(find.text('Filamentcode eingeben'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField), code);

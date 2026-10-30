@@ -2,12 +2,6 @@ name: Windows App erstellen
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main, simpler-app]
-    paths:
-      - 'lib/**'
-      - 'pubspec.yaml'
-      - '.github/workflows/windows-app.yml'
 
 permissions:
   contents: read
@@ -98,3 +92,4 @@ jobs:
         with:
           tag_name: ${{ steps.target.outputs.tag }}
           files: 3D-Print-Optimizer-Windows.zip
+

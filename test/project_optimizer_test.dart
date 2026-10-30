@@ -74,10 +74,10 @@ void main() {
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getString(projectStorageKey), 'broken JSON');
   });
-  testWidgets('Nonstandard nozzle does not show numeric 0.4 mm settings', (tester) async {
+  testWidgets('Nozzle-specific geometry adapts to a 0.6 mm nozzle', (tester) async {
     await tester.pumpWidget(MaterialApp(home: Scaffold(body:
       SingleChildScrollView(child: ProjectRecommendation(project: sample('one', nozzle: '0.6'))))));
-    expect(find.textContaining('Schichthöhe:'), findsNothing);
-    expect(find.textContaining('Weitere Werte: passendes Düsenprofil'), findsOneWidget);
+    expect(find.text('Schichthöhe: 0,180 mm'), findsOneWidget);
+    expect(find.text('Linienbreite: 0.63 mm'), findsOneWidget);
   });
 }

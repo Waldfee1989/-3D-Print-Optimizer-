@@ -9,6 +9,7 @@ on:
       - in-app-updates
       - filament-scan
       - material-advice
+      - model-tools
       - project-optimizer
 
 permissions:
@@ -47,6 +48,9 @@ jobs:
         env:
           ANDROID_SIGNING_CONFIG: ${{ secrets.ANDROID_SIGNING_CONFIG }}
         run: python3 scripts/configure_android_signing.py
+
+      - name: Lokale Geometrie einrichten
+        run: python3 scripts/configure_android_geometry.py
 
       - name: Android SDK 36 einstellen
         run: |
@@ -139,7 +143,7 @@ jobs:
           PY
 
       - name: APK erstellen
-        run: flutter build apk --release --build-number=${{ github.run_number }}
+        run: flutter build apk --release --target-platform android-arm64 --build-number=${{ github.run_number }}
 
       - name: APK-Signatur vor Veroeffentlichung pruefen
         run: python3 scripts/verify_android_signing.py
@@ -164,3 +168,4 @@ jobs:
         run: |
           rm -f -- android/key.properties
           rm -rf -- "${RUNNER_TEMP:?}/optimizer-android-signing"
+

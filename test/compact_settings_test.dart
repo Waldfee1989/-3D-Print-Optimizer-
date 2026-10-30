@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:print_optimizer/project_optimizer.dart';
 import 'package:print_optimizer/main.dart';
+import 'scroll_helpers.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 PrintProject part({bool flex = false, bool outdoor = false, bool functional = false}) => PrintProject(
@@ -20,7 +21,7 @@ void main() {
       expect(find.text(p.advice.reason), findsNothing);
       expect(rows.keys, containsAll(['Kühlung','Rückzug','Haftung','Erste Schicht','Stützen']));
       expect(projectSettingsText(p), contains('Druckbett: ${rows['Druckbett']}'));
-      expect(projectSettingsText(p), contains('kein importierbares Slicer-Profil'));
+      expect(projectSettingsText(p), contains('Importierbare Profile separat als ZIP exportieren.'));
     }
   });
   testWidgets('Home focuses on one model action and inventory remains reachable', (tester) async {
@@ -33,7 +34,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('STL / 3MF öffnen'), findsOneWidget);
     expect(find.text('Weitere Funktionen folgen'), findsNothing);
-    await tester.scrollUntilVisible(find.text('Filamentlager'), 200);
+    await reveal(tester,find.text('Filamentlager'));
     await tester.tap(find.text('Filamentlager'));
     await tester.pumpAndSettle();
     expect(find.text('Barcode scannen'), findsOneWidget);

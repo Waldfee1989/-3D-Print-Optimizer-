@@ -16,10 +16,40 @@ import 'filament_scanner.dart';
 import 'project_optimizer.dart';
 import 'support_analysis.dart';
 import 'model_3mf.dart';
+import 'print_geometry.dart';
+import 'model_size_dialog.dart';
+import 'build_plate.dart';
+import 'printer_setup.dart';
+import 'nozzles.dart';
+import 'low_stock.dart';
+import 'help_chat.dart';
+import 'model_cut.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() => runApp(const OptimizerApp());
+void main() {
+  LicenseRegistry.addLicense(() async* { yield LicenseEntryWithLineBreaks(['Manifold'],await rootBundle.loadString('assets/licenses/Manifold.txt')); });
+  runApp(const OptimizerApp());
+}
+
+Future<(String,Uint8List)?> chooseModelBytes() async {
+  final result = await FilePicker.platform.pickFiles(type: FileType.custom,
+    allowedExtensions: ['stl','3mf'],withData: false);
+  if (result == null) return null;
+  final file = result.files.single;
+  const maximum = 100*1024*1024;
+  if (file.size > maximum || (file.path != null && await File(file.path!).length() > maximum))
+    throw const FormatException('Datei ist größer als 100 MB.');
+  final bytes = file.bytes ?? (file.path == null ? null : await File(file.path!).readAsBytes());
+  if (bytes == null) throw const FormatException('Datei konnte nicht gelesen werden.');
+  if (bytes.length > maximum) throw const FormatException('Datei ist größer als 100 MB.');
+  return (file.name,bytes);
+}
+Future<PlatePart?> pickPlatePart() async {
+  final input = await chooseModelBytes();
+  return input == null ? null : compute(_MeshReader.plateInBackground,input);
+}
 
 class OptimizerApp extends StatelessWidget {
   const OptimizerApp({super.key});
@@ -48,6 +78,8 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   SharedPreferences? prefs;
   String printer = 'Anycubic Kobra S1', slicer = 'Anycubic Slicer Next', nozzle = '0.4';
+  PrinterBed? bed;
+  double lowStockThreshold = 200;
   bool configured = false;
   bool inventoryOpen = false;
   String qualityMode = 'Maximale Qualität';
@@ -86,6 +118,8 @@ class _HomePageState extends State<HomePage> {
       slicer = p.getString('slicer') ?? slicer;
       nozzle = p.getString('nozzle') ?? nozzle;
       qualityMode = p.getString('qualityMode') ?? qualityMode;
+      bed = loadPrinterBed(p,printer);
+      lowStockThreshold = p.getDouble(lowStockThresholdKey) ?? 200;
       try {
         stock = (jsonDecode(p.getString('stock') ?? '[]') as List)
             .map((e) => Map<String,dynamic>.from(e as Map)).toList();
@@ -102,35 +136,14 @@ class _HomePageState extends State<HomePage> {
     await p.setString('stock', jsonEncode(stock));
   }
   Future<void> setup() async {
-    String pr = printer, sl = slicer, nz = nozzle;
-    final result = await showDialog<bool>(context: context, builder: (ctx) =>
-      StatefulBuilder(builder: (ctx, update) => AlertDialog(
-        title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-          const Text('Ersteinrichtung'),
-          Wrap(spacing: 8, children: [
-            TextButton(onPressed: ()=>Navigator.pop(ctx,false), child: const Text('Abbrechen')),
-            FilledButton(onPressed: ()=>Navigator.pop(ctx,true), child: const Text('Speichern')),
-          ]),
-        ]),
-        content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Drucker, Slicer und Düse auswählen. Später änderbar.'),
-          TextField(controller: TextEditingController(text: pr),
-            decoration: const InputDecoration(labelText: 'Druckermodell'),
-            onChanged: (v) => pr=v),
-          DropdownButtonFormField<String>(value: sl, decoration: const InputDecoration(labelText: 'Slicer'),
-            items: ['Anycubic Slicer','Anycubic Slicer Next','OrcaSlicer','Anderer Slicer']
-              .map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),
-            onChanged: (v)=>update(()=>sl=v??sl)),
-          DropdownButtonFormField<String>(value: nz, decoration: const InputDecoration(labelText: 'Düse (mm)'),
-            items: ['0.2','0.4','0.6','0.8'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),
-            onChanged: (v)=>update(()=>nz=v??nz)),
-        ])),
-
-      )));
-    if (result == true) {
-      setState(() { printer=pr; slicer=sl; nozzle=nz; configured=true; });
+    final result = await Navigator.push<PrinterSetup>(context,MaterialPageRoute(builder: (_) =>
+      PrinterSetupPage(printer: printer,slicer: slicer,nozzle: nozzle,bed: bed)));
+    if (result == null || !mounted || prefs == null) return;
+    try {
+      await savePrinterBed(prefs!,result.printer,result.bed);
+      setState(() { printer = result.printer; slicer = result.slicer; nozzle = result.nozzle; bed = result.bed; configured = true; });
       await save();
-    }
+    } catch (_) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Einrichtung konnte nicht gespeichert werden.'))); }
   }
   Future<void> addFilament({String barcode = '', int? index}) async {
     final p = prefs;
@@ -203,8 +216,19 @@ class _HomePageState extends State<HomePage> {
     await handleFilamentCode(value);
   }
 
-  void openModel() => Navigator.push(context, MaterialPageRoute(builder: (_) =>
-    ModelPreviewPage(printer: printer, slicer: slicer, nozzle: nozzle, quality: qualityMode)));
+  Future<void> openModel() async {
+    if (bed == null) await setup();
+    if (!mounted || bed == null) return;
+    await Navigator.push(context,MaterialPageRoute(builder: (_) => ModelPreviewPage(
+      printer: printer,slicer: slicer,nozzle: nozzle,quality: qualityMode,bed: bed)));
+  }
+  Future<void> openBuildPlate() async {
+    if (bed == null) await setup();
+    if (!mounted || bed == null) return;
+    await Navigator.push(context,MaterialPageRoute(builder: (_) => BuildPlatePage(pickPart: pickPlatePart,bed: bed!,printer: printer)));
+  }
+  void openLowStock() => Navigator.push(context,MaterialPageRoute(builder: (_) => LowStockPage(stock: stock,
+    threshold: lowStockThreshold,onThresholdChanged: (value) { if (mounted) setState(() => lowStockThreshold = value); })));
 
   Widget actionCard({required String title, required String subtitle,
     required IconData icon, required Color color, required VoidCallback onTap}) =>
@@ -223,6 +247,7 @@ class _HomePageState extends State<HomePage> {
       leading: inventoryOpen ? IconButton(tooltip: 'Zur Startseite', icon: const Icon(Icons.arrow_back),
         onPressed: () => setState(() => inventoryOpen = false)) : null,
       actions: [
+        IconButton(tooltip: 'Druckhilfe',onPressed: () => Navigator.push(context,MaterialPageRoute(builder: (_) => const HelpChatPage())),icon: const Icon(Icons.chat_bubble_outline)),
         IconButton(tooltip: 'Updates prüfen', onPressed: () => checkForUpdates(manual: true), icon: const Icon(Icons.system_update)),
         IconButton(tooltip: 'Einrichtung', onPressed: setup, icon: const Icon(Icons.settings_outlined)),
       ]),
@@ -247,10 +272,16 @@ class _HomePageState extends State<HomePage> {
                 icon: const Icon(Icons.add), label: const Text('STL / 3MF öffnen'))),
             ])),
           const SizedBox(height: 18),
+          actionCard(title: 'Mehrere Teile auf einer Platte',subtitle: 'Dateien hinzufügen und einzeln verschieben',
+            icon: Icons.dashboard_customize_outlined,color: const Color(0xffffc780),
+            onTap: openBuildPlate),
           actionCard(title: 'Meine Druckprojekte', subtitle: 'Einstellungen wieder öffnen',
             icon: Icons.folder_copy_outlined, color: const Color(0xffb8a6ff),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrintProjectsPage()))),
-          actionCard(title: 'Filamentlager', subtitle: '${stock.length} Rollen · scannen und verwalten',
+          actionCard(title: 'Meine Düsen',subtitle: 'Bestand und passende Düsenempfehlungen',
+            icon: Icons.settings_input_component_outlined,color: const Color(0xff90c2ff),
+            onTap: () => Navigator.push(context,MaterialPageRoute(builder: (_) => NozzleInventoryPage(printer: printer,installed: nozzle)))),
+          actionCard(title: 'Filamentlager', subtitle: '${stock.length} Rollen · ${reorderFilaments(stock,lowStockThreshold).length} Filamente fast leer',
             icon: Icons.qr_code_scanner_rounded, color: const Color(0xff6ee7d8),
             onTap: () => setState(() => inventoryOpen = true)),
           const SizedBox(height: 12),
@@ -261,7 +292,7 @@ class _HomePageState extends State<HomePage> {
                 Text('$nozzle mm', style: TextStyle(color: Theme.of(context).colorScheme.primary))]),
               const SizedBox(height: 8), Text(slicer, style: const TextStyle(color: Color(0xffa8b5c9))),
               const SizedBox(height: 12),
-              DropdownButtonFormField<String>(initialValue: qualityMode,
+              DropdownButtonFormField<String>(isExpanded: true,initialValue: qualityMode,
                 decoration: const InputDecoration(labelText: 'Standard-Druckmodus'),
                 items: ['Maximale Qualität', 'Ausgewogen', 'Schneller Druck']
                   .map((mode) => DropdownMenuItem(value: mode, child: Text(mode))).toList(),
@@ -282,12 +313,14 @@ class _HomePageState extends State<HomePage> {
             OutlinedButton.icon(onPressed: () => addFilament(), icon: const Icon(Icons.add), label: const Text('Manuell hinzufügen')),
           ]),
           const SizedBox(height: 18),
+          Card(child: ListTile(leading: const Icon(Icons.shopping_cart_outlined),title: Text('Nachbestellen: ${reorderFilaments(stock,lowStockThreshold).length} Filamente'),
+            subtitle: Text('Grenze: ${lowStockThreshold.toStringAsFixed(0)} g · gleiche Filamente zusammengezählt'),onTap: openLowStock,trailing: const Icon(Icons.chevron_right))),
           for (var i = 0; i < stock.length; i++) Card(child: ListTile(
             contentPadding: const EdgeInsets.all(14),
             leading: CircleAvatar(backgroundColor: Theme.of(context).colorScheme.primaryContainer,
               child: const Icon(Icons.cyclone)),
             title: Text('${stock[i]['brand']} ${stock[i]['material']} ${stock[i]['color']}'),
-            subtitle: Text('${stock[i]['grams']} g · ${stock[i]['barcode']}'),
+            subtitle: Text('${stock[i]['grams']} g${(stockGrams(stock[i]['grams']) ?? double.infinity) <= lowStockThreshold ? ' · Fast leer' : ''} · ${stock[i]['barcode']}'),
             onTap: () => addFilament(index: i),
             trailing: Row(mainAxisSize: MainAxisSize.min, children: [
               IconButton(tooltip: 'Restmenge bearbeiten', icon: const Icon(Icons.edit_outlined), onPressed: () => addFilament(index: i)),
@@ -324,12 +357,24 @@ class _Mesh {
   final _V3 minimum, maximum;
   final int totalFaces;
   SupportAssessment supports = const SupportAssessment('Im Slicer prüfen', 'Noch nicht geprüft.');
-  late final Float32List renderVertices = _normalizedVertices();
+  late Float32List sourceVertices = _normalizedVertices();
+  Float32List? posedVertices;
+  int printAxis = 0;
+  _V3? poseSize;
+  Float32List get renderVertices => posedVertices ?? sourceVertices;
+  double get radius => math.max(.001, math.sqrt(sourceSize.x*sourceSize.x+sourceSize.y*sourceSize.y+sourceSize.z*sourceSize.z)/2);
+  _Mesh oriented(Float32List pose, SupportAssessment assessment, int axis, (double,double,double) extent) {
+    final copy = _Mesh(faces,minimum,maximum,totalFaces);
+    copy.sourceVertices = sourceVertices;
+    copy.posedVertices = pose; copy.printAxis = axis; copy.supports = assessment;
+    copy.poseSize = _V3(extent.$1*radius,extent.$2*radius,extent.$3*radius);
+    return copy;
+  }
 
   Float32List _normalizedVertices() {
     final center = _V3(minimum.x / 2 + maximum.x / 2,
         minimum.y / 2 + maximum.y / 2, minimum.z / 2 + maximum.z / 2);
-    final extent = size;
+    final extent = sourceSize;
     final radius = math.max(.001, math.sqrt(extent.x * extent.x +
         extent.y * extent.y + extent.z * extent.z) / 2);
     final result = Float32List(faces.length * 9);
@@ -344,11 +389,16 @@ class _Mesh {
     return result;
   }
 
-  _V3 get size => _V3(maximum.x - minimum.x,
-      maximum.y - minimum.y, maximum.z - minimum.z);
+  _V3 get sourceSize => _V3(maximum.x-minimum.x, maximum.y-minimum.y, maximum.z-minimum.z);
+  _V3 get size => poseSize ?? sourceSize;
 }
 
 class _MeshReader {
+  static PlatePart plateInBackground((String,Uint8List) input) {
+    final mesh = fromBytes(input.$1,input.$2);
+    return PlatePart(name: input.$1,vertices: mesh.sourceVertices,unitScale: mesh.radius,
+      width: mesh.size.x,depth: mesh.size.y,height: mesh.size.z);
+  }
   static _Mesh inBackground((String, Uint8List) input) {
     final parsed = fromBytes(input.$1, input.$2);
     // Prepare the render buffer on the worker too, before returning to the UI.
@@ -427,16 +477,20 @@ class _MeshReader {
 
 class ModelPreviewPage extends StatefulWidget {
   const ModelPreviewPage({super.key, this.printer = 'Anycubic Kobra S1',
-    this.slicer = 'Anycubic Slicer Next', this.nozzle = '0.4', this.quality = 'Maximale Qualität'});
+    this.slicer = 'Anycubic Slicer Next', this.nozzle = '0.4', this.quality = 'Maximale Qualität',this.bed});
   final String printer, slicer, nozzle, quality;
+  final PrinterBed? bed;
   @override State<ModelPreviewPage> createState() => _ModelPreviewPageState();
 }
 
 class _ModelPreviewPageState extends State<ModelPreviewPage> {
   _Mesh? mesh;
+  PrinterBed? get printerBed => widget.bed ?? knownPrinterBed(widget.printer);
   String? fileName, error;
   String projectId = DateTime.now().microsecondsSinceEpoch.toString();
   bool loading = false;
+  bool showOverhangs = true;
+  double modelScale = 1;
   double angleX = 25, angleY = 30, zoom = 1;
   final Map<int, Offset> _touches = {};
   double _gestureZoom = 1, _gestureSpan = 0;
@@ -479,28 +533,11 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
   Future<void> openModel() async {
     setState(() { loading = true; error = null; });
     try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom, allowedExtensions: ['stl', '3mf'],
-        withData: false,
-      );
-      if (result == null) return;
-      final file = result.files.single;
-      const maximumBytes = 100 * 1024 * 1024;
-      // Check metadata before loading the entire file into memory.
-      if (file.size > maximumBytes || (file.path != null &&
-          await File(file.path!).length() > maximumBytes)) {
-        throw const FormatException('Datei ist größer als 100 MB.');
-      }
-      final bytes = file.bytes ?? (file.path == null ? null :
-          await File(file.path!).readAsBytes());
-      if (bytes == null) throw const FormatException('Datei konnte nicht gelesen werden.');
-      // Schutz vor sehr grossen Dateien auf Mobilgeraeten.
-      if (bytes.length > maximumBytes) {
-        throw const FormatException('Datei ist größer als 100 MB.');
-      }
-      final parsed = await compute(_MeshReader.inBackground, (file.name, bytes));
+      final input = await chooseModelBytes();
+      if (input == null) return;
+      final parsed = await compute(_MeshReader.inBackground,input);
       if (!mounted) return;
-      setState(() { mesh = parsed; fileName = file.name; projectId = DateTime.now().microsecondsSinceEpoch.toString(); angleX = 25; angleY = 30; zoom = 1; });
+      setState(() { mesh = parsed; fileName = input.$1; projectId = DateTime.now().microsecondsSinceEpoch.toString(); modelScale = 1; angleX = 25; angleY = 30; zoom = 1; });
     } catch (e) {
       if (mounted) setState(() => error = 'Datei konnte nicht geöffnet werden: $e');
     } finally {
@@ -508,18 +545,76 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
     }
   }
 
+  Future<void> optimizeOrientation() async {
+    final m = mesh;
+    if (m == null || loading || !m.supports.valid) return;
+
+    setState(() { loading = true; error = null; });
+    try {
+      // The candidate is relative to the current pose. Keep the original
+      // source buffer shared and rotate only its compact preview buffer.
+      final result = await compute(orientForPrinter,(m.renderVertices,m.supports,m.radius*modelScale,printerBed));
+      if (!mounted) return;
+      final copy = m.oriented(result.$1,result.$2,-1,result.$3);
+      setState(() { mesh = copy; angleX = 25; angleY = 30; zoom = 1; });
+    } catch (e) { if (mounted) setState(() => error = 'Drucklage: $e'); }
+    finally { if (mounted) setState(() => loading = false); }
+  }
+  Future<void> restorePrintPose() async {
+    final m = mesh;
+    if (m == null || loading) return;
+    setState(() => loading = true);
+    try {
+      final result = await compute(orientPrintModel,(m.sourceVertices,0));
+      if (mounted) setState(() { mesh = m.oriented(result.$1,result.$2,0,result.$3); });
+    } finally { if (mounted) setState(() => loading = false); }
+  }
+  Future<void> editSize(bool width) async {
+    final m = mesh;
+    if (m == null || loading) return;
+    final scale = await showDialog<double>(context: context, builder: (_) =>
+      ModelSizeDialog(scale: modelScale,width: m.size.x,editWidth: width));
+    if (mounted && scale != null) setState(() => modelScale = scale);
+  }
+  Future<void> cutModel() async {
+    final m = mesh;
+    if (m == null || loading || printerBed == null) return;
+    final parts = await requestModelCut(context,PlatePart(name: fileName ?? 'Modell',vertices: m.renderVertices,
+      unitScale: m.radius,width: m.size.x,depth: m.size.y,height: m.size.z),modelScale,bed: printerBed);
+    if (!mounted || parts == null) return;
+    await Navigator.push(context,MaterialPageRoute(builder: (_) => BuildPlatePage(pickPart: pickPlatePart,bed: printerBed!,printer: widget.printer,initialParts: parts)));
+  }
+  Future<void> saveModel() async {
+    final m = mesh;
+    if (m == null || loading) return;
+    setState(() { loading = true; error = null; });
+    try {
+      final bytes = await compute(encodePrintStl,(m.renderVertices,m.radius*modelScale));
+      if (!mounted) return;
+      final base = (fileName ?? 'Modell').replaceAll(RegExp(r'[^a-zA-Z0-9._-]'),'_');
+      final target = await FilePicker.platform.saveFile(dialogTitle: 'Modell speichern',
+        fileName: '${base}_angepasst.stl',type: FileType.custom,allowedExtensions: ['stl'],bytes: bytes);
+      if (target == null) return;
+      if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) await File(target).writeAsBytes(bytes,flush: true);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Neue STL-Datei mit Größe und Drucklage gespeichert.')));
+    } catch (_) { if (mounted) setState(() => error = 'Modelldatei konnte nicht gespeichert werden.'); }
+    finally { if (mounted) setState(() => loading = false); }
+  }
+
   @override Widget build(BuildContext context) {
     final m = mesh;
     return Scaffold(
-      appBar: AppBar(title: const Text('3D-Modellvorschau'), actions: [
+      appBar: AppBar(title: const Text('Modell'), actions: [
+        TextButton(onPressed: m == null || loading ? null : saveModel, child: const Text('Datei speichern')),
         TextButton(onPressed: m == null || loading ? null : () => Navigator.push(context,
           MaterialPageRoute(builder: (_) => ProjectOptimizerPage(project: PrintProject(
             id: projectId, fileName: fileName ?? 'Modell',
-            dimensions: '${m.size.x.toStringAsFixed(1)} × ${m.size.y.toStringAsFixed(1)} × ${m.size.z.toStringAsFixed(1)} (Modellkoordinaten, normalerweise mm)',
+            dimensions: '${(m.size.x*modelScale).toStringAsFixed(2)} × ${(m.size.y*modelScale).toStringAsFixed(2)} × ${(m.size.z*modelScale).toStringAsFixed(2)} mm',
+            bed: printerBed,modelScale: modelScale, orientation: m.printAxis == 0 ? 'Wie in der Datei' : 'Optimiert · angepasste STL verwenden',
             printer: widget.printer, slicer: widget.slicer, nozzle: widget.nozzle,
             priority: widget.quality, supportStatus: m.supports.status, supportReason: m.supports.reason)))), child: const Text('OK')),
       ]),
-      body: ListView(padding: const EdgeInsets.all(16), children: [
+      body: SafeArea(top: false, child: ListView(padding: const EdgeInsets.all(16), children: [
         FilledButton.icon(onPressed: loading ? null : openModel,
           icon: const Icon(Icons.folder_open),
           label: Text(loading ? 'Datei wird geladen...' : 'STL / 3MF auswählen')),
@@ -552,7 +647,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
                   final factor = math.min(1.0, 480 / math.max(
                       constraints.maxWidth, constraints.maxHeight));
                   return _SurfacePreview(mesh: m, angleX: angleX, angleY: angleY,
-                    zoom: zoom, width: math.max(1, (constraints.maxWidth * factor).round()),
+                    zoom: zoom, showOverhangs: showOverhangs, width: math.max(1, (constraints.maxWidth * factor).round()),
                     height: math.max(1, (constraints.maxHeight * factor).round()));
                 }))))),
           const SizedBox(height: 8),
@@ -570,13 +665,37 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           OutlinedButton(onPressed: () => setState(() { angleX = 25; angleY = 30; zoom = 1; }),
             child: const Text('Ansicht zurücksetzen')),
           const SizedBox(height: 8),
-          Text('Abmessungen (Modellkoordinaten, normalerweise mm): '
-            '${m.size.x.toStringAsFixed(1)} × ${m.size.y.toStringAsFixed(1)} × '
-            '${m.size.z.toStringAsFixed(1)}'),
+          Text('Größe: ${(modelScale*100).toStringAsFixed(1)} %'),
+          if (printerBed != null &&
+            (m.size.x*modelScale > printerBed!.width || m.size.y*modelScale > printerBed!.depth || m.size.z*modelScale > printerBed!.height))
+            Text('Modell ist größer als der Bauraum von ${widget.printer}.', style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          Text('Abmessungen: ${(m.size.x*modelScale).toStringAsFixed(2)} × ${(m.size.y*modelScale).toStringAsFixed(2)} × ${(m.size.z*modelScale).toStringAsFixed(2)} mm'),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            OutlinedButton(onPressed: loading ? null : () => editSize(false), child: const Text('Größe in %')),
+            OutlinedButton(onPressed: loading || m.size.x <= 0 ? null : () => editSize(true), child: const Text('Breite in mm')),
+            if (modelScale != 1) TextButton(onPressed: () => setState(() => modelScale = 1), child: const Text('Originalgröße')),
+          ]),
+          const Text('Proportionen bleiben erhalten. Oben als neue STL speichern.'),
+          if (Platform.isAndroid) OutlinedButton.icon(onPressed: loading || printerBed == null ? null : cutModel,
+            icon: const Icon(Icons.content_cut),label: const Text('Teilen und Zapfen einfügen')),
+          if (printerBed != null) Text('Bauraum: ${printerBed!.width} × ${printerBed!.depth} × ${printerBed!.height} mm'),
+          OutlinedButton.icon(onPressed: loading || printerBed == null ? null : () => Navigator.push(context,MaterialPageRoute(builder: (_) =>
+            BuildPlatePage(pickPart: pickPlatePart,bed: printerBed ?? const PrinterBed(250,250,250),printer: widget.printer,initialScale: modelScale,initialPart: PlatePart(name: fileName ?? 'Modell',
+              vertices: m.renderVertices,unitScale: m.radius,width: m.size.x,depth: m.size.y,height: m.size.z)))),
+            icon: const Icon(Icons.add),label: const Text('Weitere Datei auf Druckplatte hinzufügen')),
+          SwitchListTile(contentPadding: EdgeInsets.zero, title: const Text('Überhänge rot anzeigen'),
+            value: showOverhangs, onChanged: m.supports.valid ? (value) => setState(() => showOverhangs = value) : null),
+          OutlinedButton(onPressed: () => setState(() { angleX = 180; angleY = 0; zoom = 1; }), child: const Text('Unterseite ansehen')),
+          FilledButton.icon(onPressed: loading || !m.supports.valid ? null : optimizeOrientation,
+            icon: const Icon(Icons.screen_rotation_alt), label: const Text('Automatisch ausrichten')),
+          if (m.printAxis != 0) TextButton(onPressed: loading ? null : restorePrintPose, child: const Text('Original-Drucklage')),
+          const Text('Vergleich von Drucklagen nach Überhangfläche, Auflagefläche und Bauraum. Kein Festigkeitsnachweis.'),
+
           Text('Dreiecke: ${m.totalFaces}'),
           Text('Stützen: ${m.supports.status}'),
+          if (m.supports.valid) Text('Kritische Fläche: ${(m.supports.overhangFraction*100).toStringAsFixed(1)} % der Oberfläche'),
           Text(m.supports.reason),
-          const Text('Bewertung für die Dateiausrichtung. Drehen in der Vorschau ändert die Druckausrichtung nicht.'),
+          const Text('Drehen mit dem Finger ändert nur die Ansicht. Optimierte Drucklage und Größe oben als neue STL speichern. STL enthält keine 3MF-Farben.'),
           const SizedBox(height: 12),
           const Text('Originaldatei bleibt unverändert. Stützenhinweis im Slicer prüfen.'),
         ] else if (!loading) ...[
@@ -585,16 +704,17 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           const SizedBox(height: 12),
           const Center(child: Text('Öffne eine STL- oder 3MF-Datei.')),
         ],
-      ]),
+      ])),
     );
   }
 }
 
 class _SurfacePreview extends StatefulWidget {
   const _SurfacePreview({required this.mesh, required this.angleX,
-    required this.angleY, required this.zoom, required this.width, required this.height});
+    required this.angleY, required this.zoom, required this.showOverhangs, required this.width, required this.height});
   final _Mesh mesh;
   final double angleX, angleY, zoom;
+  final bool showOverhangs;
   final int width, height;
 
   @override State<_SurfacePreview> createState() => _SurfacePreviewState();
@@ -611,7 +731,7 @@ class _SurfacePreviewState extends State<_SurfacePreview> {
   @override void didUpdateWidget(covariant _SurfacePreview oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.mesh != widget.mesh || oldWidget.angleX != widget.angleX ||
-        oldWidget.angleY != widget.angleY || oldWidget.zoom != widget.zoom ||
+        oldWidget.angleY != widget.angleY || oldWidget.zoom != widget.zoom || oldWidget.showOverhangs != widget.showOverhangs ||
         oldWidget.width != widget.width || oldWidget.height != widget.height) {
       _requestRender();
     }
@@ -629,7 +749,8 @@ class _SurfacePreviewState extends State<_SurfacePreview> {
         final revision = _revision;
         final mesh = widget.mesh;
         final request = MeshRenderRequest(widget.mesh.renderVertices,
-            widget.width, widget.height, widget.angleX, widget.angleY, widget.zoom);
+            widget.width, widget.height, widget.angleX, widget.angleY, widget.zoom,
+            overhangFaces: widget.showOverhangs ? mesh.supports.overhangFaces : null);
         final pixels = await compute(renderMesh, request);
         if (!mounted) return;
         if (mesh != widget.mesh) continue;

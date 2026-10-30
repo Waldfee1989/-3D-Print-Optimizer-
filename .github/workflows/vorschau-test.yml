@@ -11,8 +11,12 @@ on:
       - material-advice
       - project-optimizer
       - simpler-app
+      - model-tools
     paths:
       - 'lib/**'
+      - 'native/**'
+      - 'scripts/configure_android_geometry.py'
+      - 'scripts/android_geometry/**'
       - 'test/**'
       - 'pubspec.yaml'
       - '.github/workflows/vorschau-test.yml'
@@ -164,8 +168,16 @@ jobs:
           import 'package:print_optimizer/main.dart';
           import 'package:shared_preferences/shared_preferences.dart';
           import 'package:print_optimizer/project_optimizer.dart';
+          import '../scroll_helpers.dart';
 
           class _Picker extends FilePicker {
+            Uint8List? saved;
+            @override
+            Future<String?> saveFile({String? dialogTitle,String? fileName,String? initialDirectory,
+              FileType type = FileType.any,List<String>? allowedExtensions,Uint8List? bytes,bool lockParentWindow = false}) async {
+              saved = bytes; return null;
+            }
+
             _Picker({this.paddingBytes = 0, this.reportedSize});
             final int paddingBytes;
             final int? reportedSize;
@@ -228,6 +240,33 @@ jobs:
               await tester.pumpWidget(const SizedBox());
             });
 
+            testWidgets('Scaling changes actual saved STL dimensions and keeps original picker data', (tester) async {
+              final picker = _Picker();
+              await loadModel(tester,picker: picker);
+              await reveal(tester,find.text('Größe in %'));
+              await tester.tap(find.text('Größe in %'));
+              await tester.pumpAndSettle();
+              await tester.enterText(find.byType(TextFormField),'200');
+              await tester.tap(find.text('Übernehmen'));
+              await tester.pumpAndSettle();
+              await reveal(tester,find.text('Größe: 200.0 %'));
+              await tester.tap(find.text('Datei speichern'));
+              for (var i = 0; i < 100 && picker.saved == null; i++) {
+                await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+                await tester.pump();
+              }
+              expect(picker.saved,isNotNull);
+              final data = ByteData.sublistView(picker.saved!);
+              var minX = double.infinity,maxX = double.negativeInfinity;
+              for (var k = 0; k < 3; k++) {
+                final x = data.getFloat32(84+12+k*12,Endian.little);
+                if (x < minX) minX = x; if (x > maxX) maxX = x;
+              }
+              expect(maxX-minX,closeTo(40,0.001));
+              expect(tester.takeException(),isNull);
+              await tester.pumpWidget(const SizedBox());
+            });
+
             testWidgets('Imports STL larger than the old 30 MB limit', (tester) async {
               await loadModel(tester, picker: _Picker(paddingBytes: 31 * 1024 * 1024));
               final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
@@ -262,8 +301,7 @@ jobs:
               await tester.drag(area, const Offset(0, 60));
               await tester.pump();
               final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
-              scroll.position.jumpTo(scroll.position.maxScrollExtent);
-              await tester.pump();
+              await reveal(tester,find.textContaining('Vertikal drehen:'));
               expect(find.textContaining('Vertikal drehen:'), findsOneWidget);
               expect(find.text('Vertikal drehen: 25°'), findsNothing);
               scroll.position.jumpTo(0);
@@ -302,12 +340,12 @@ jobs:
               expect(find.text('Zoom: 100 %'), findsNothing);
               // Lazy ListView children must be built before ensureVisible can find them.
               final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
-              scroll.position.jumpTo(scroll.position.maxScrollExtent);
-              await tester.pump();
-              await tester.ensureVisible(find.text('Ansicht zurücksetzen'));
+              await reveal(tester,find.text('Ansicht zurücksetzen'));
               await tester.tap(find.text('Ansicht zurücksetzen'));
               await tester.pump();
+              await reveal(tester,find.text('Horizontal drehen: 30°'));
               expect(find.text('Horizontal drehen: 30°'), findsOneWidget);
+              await reveal(tester,find.text('Vertikal drehen: 25°'));
               expect(find.text('Vertikal drehen: 25°'), findsOneWidget);
               scroll.position.jumpTo(0);
               await tester.pump();
@@ -337,3 +375,17 @@ jobs:
               message = log.read_text(errors='replace')[-16000:]
               message = message.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
               print('::error title=Vorschau-Testdetails::' + message)
+
+
+  native-geometry:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native Geometrie bauen
+        run: cmake -S native/model_geometry -B build/native_geometry -DCMAKE_BUILD_TYPE=Release
+      - run: cmake --build build/native_geometry --parallel 2
+      - name: Geschlossene Schnitte und Zapfen testen
+        run: ctest --test-dir build/native_geometry --output-on-failure
+      - name: Android-Einrichtung pruefen
+        run: python3 -m unittest discover -s scripts/tests -v

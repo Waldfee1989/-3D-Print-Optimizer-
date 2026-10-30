@@ -10,12 +10,13 @@ class MeshRenderRequest {
     this.height,
     this.angleX,
     this.angleY,
-    this.zoom,
+    this.zoom, {this.overhangFaces}
   );
 
   final Float32List vertices; // Normalized triangle coordinates, nine per face.
   final int width, height;
   final double angleX, angleY, zoom;
+  final Uint8List? overhangFaces;
 }
 
 Uint8List renderMesh(MeshRenderRequest request) {
@@ -79,9 +80,11 @@ Uint8List renderMesh(MeshRenderRequest request) {
     nz = nz / length * direction;
     final light =
         .3 + .7 * math.max(0.0, nx * -.35 + ny * .45 + nz * .8215838363);
-    final red = (130 * light).round();
-    final green = (184 * light).round();
-    final blue = (247 * light).round();
+    final flags = request.overhangFaces;
+    final critical = flags != null && face~/9 < flags.length && flags[face~/9] != 0;
+    final red = ((critical ? 255 : 130) * light).round();
+    final green = ((critical ? 82 : 184) * light).round();
+    final blue = ((critical ? 90 : 247) * light).round();
 
     for (var py = top; py <= bottom; py++) {
       for (var px = left; px <= right; px++) {
@@ -105,3 +108,4 @@ Uint8List renderMesh(MeshRenderRequest request) {
   }
   return pixels;
 }
+
