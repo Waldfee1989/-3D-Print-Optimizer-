@@ -32,11 +32,11 @@ void main(){
     await reveal(tester,find.text('Referenz übernehmen'));await tester.tap(find.text('Referenz übernehmen'));await tester.pumpAndSettle();
     await point(.1);await point(.9);
     await reveal(tester,find.text('56,0 mm'));expect(find.text('56,0 mm'),findsOneWidget);
-    await reveal(tester,find.text('Referenz für Adapter'));await tester.tap(find.text('Referenz für Adapter'));await tester.pumpAndSettle();
+    await reveal(tester,find.text('Referenz für Bauteil'));await tester.tap(find.text('Referenz für Bauteil'));await tester.pumpAndSettle();
     await tester.tap(find.text('Seite A · innen'));await tester.pumpAndSettle();
-    await reveal(tester,find.text('Messung für Adapter'));await tester.tap(find.text('Messung für Adapter'));await tester.pumpAndSettle();
+    await reveal(tester,find.text('Messung für Bauteil'));await tester.tap(find.text('Messung für Bauteil'));await tester.pumpAndSettle();
     await tester.tap(find.text('Seite B · außen'));await tester.pumpAndSettle();
-    await tester.tap(find.text('Zum Adapter'));await tester.pumpAndSettle();
+    await tester.tap(find.text('Zum Bauteil'));await tester.pumpAndSettle();
     expect(captured!.first!.diameter,35);expect(captured!.first!.kind,DiameterKind.inner);
     expect(captured!.second!.diameter,56);expect(captured!.second!.kind,DiameterKind.outer);
     expect(captured!.next,AdapterField.length);expect(captured!.wall,isNull);expect(tester.takeException(),isNull);

@@ -42,7 +42,7 @@ class _AdapterPageState extends State<AdapterPage>{
     if(invalid!=null){setState(()=>error=invalid);return;}
     setState((){busy=true;error=null;});
     try{final model=await compute(buildAdapter,spec);if(mounted)setState(()=>created=model);}
-    catch(_){if(mounted)setState(()=>error='Adapter konnte mit diesen Maßen nicht erzeugt werden.');}
+    catch(_){if(mounted)setState(()=>error='Bauteil konnte mit diesen Maßen nicht erzeugt werden.');}
     finally{if(mounted)setState(()=>busy=false);}
   }
   @override void dispose(){answer.dispose();super.dispose();}
@@ -55,10 +55,10 @@ class _AdapterPageState extends State<AdapterPage>{
       if(draft.wall!=null)(AdapterField.wall,'Wandstärke an den Öffnungen',mm(draft.wall!)),
       if(draft.socket!=null)(AdapterField.socket,'Steckbereich je Seite',mm(draft.socket!)),
     ];
-    return Scaffold(appBar:AppBar(title:const Text('Adapter nach Maß'),actions:[
+    return Scaffold(appBar:AppBar(title:const Text('Bauteil erstellen'),actions:[
       TextButton(onPressed:busy||!draft.complete?null:created==null?create:()=>Navigator.pop(context,created),child:Text(created==null?'Erstellen':'Übernehmen')),
     ]),body:SafeArea(top:false,child:ListView(padding:const EdgeInsets.all(20),children:[
-      const StudioHeading('Beschreiben. Prüfen. Erstellen.',subtitle:'Runde, hohle Übergangsadapter mit zwei Steckseiten.'),
+      const StudioHeading('Beschreiben. Prüfen. Erstellen.',subtitle:'Vorlage: Runder Übergang mit zwei Steckseiten.'),
       if(created!=null)...[
         _AdapterPreview(part:created!),const SizedBox(height:12),
         Text('Modell: ${created!.width.toStringAsFixed(1)} × ${created!.depth.toStringAsFixed(1)} × ${created!.height.toStringAsFixed(1)} mm'),

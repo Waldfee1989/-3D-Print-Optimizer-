@@ -258,7 +258,7 @@ class _HomePageState extends State<HomePage> {
           StudioHero(onOpen:openModel),
           const SizedBox(height:10),
           Row(children:[
-            Expanded(child:OutlinedButton.icon(onPressed:()=>openAdapter(),icon:const Icon(Icons.mic_none),label:const Text('Adapter'))),
+            Expanded(child:OutlinedButton.icon(onPressed:()=>openAdapter(),icon:const Icon(Icons.mic_none),label:const Text('Bauteil erstellen',textAlign:TextAlign.center))),
             const SizedBox(width:10),Expanded(child:OutlinedButton.icon(onPressed:openPhoto,icon:const Icon(Icons.photo_size_select_large_outlined),label:const Text('Fotomaße'))),
           ]),
           const StudioHeading('Deine Werkzeuge',subtitle:'Vorbereiten, organisieren, loslegen.'),

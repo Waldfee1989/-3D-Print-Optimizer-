@@ -90,7 +90,7 @@ class _PhotoMeasurePageState extends State<PhotoMeasurePage>{
     final question=calibration==null?(reference.length==2?'Wie lang ist die markierte Referenz in Millimetern?':'Markiere zwei Endpunkte einer bekannten Strecke.'):
       measurement.length<2?'Markiere jetzt zwei Endpunkte der zu messenden Strecke.':'Die Bildschätzung ist berechnet.';
     return Scaffold(appBar:AppBar(title:const Text('Fotomaße'),actions:[
-      TextButton(onPressed:draft.first==null&&draft.second==null?null:()=>Navigator.pop(context,draft),child:const Text('Zum Adapter')),
+      TextButton(onPressed:draft.first==null&&draft.second==null?null:()=>Navigator.pop(context,draft),child:const Text('Zum Bauteil')),
     ]),body:SafeArea(top:false,child:ListView(padding:const EdgeInsets.all(20),children:[
       const StudioHeading('Ein Foto. Ein bekanntes Maß.',subtitle:'Weitere sichtbare Strecken im Bild schätzen.'),
       FilledButton.icon(onPressed:busy?null:pick,icon:const Icon(Icons.add_photo_alternate_outlined),label:const Text('Foto öffnen')),
@@ -114,22 +114,22 @@ class _PhotoMeasurePageState extends State<PhotoMeasurePage>{
           Text('Referenz: ${mm(calibration!.millimetres)} mm',style:const TextStyle(fontWeight:FontWeight.w600)),
           Wrap(spacing:8,runSpacing:8,children:[
             TextButton(onPressed:()=>setState((){reference.clear();measurement.clear();calibration=null;draft.first=null;draft.second=null;}),child:const Text('Referenz neu setzen')),
-            OutlinedButton(onPressed:()=>assign(calibration!.millimetres),child:const Text('Referenz für Adapter')),
+            OutlinedButton(onPressed:()=>assign(calibration!.millimetres),child:const Text('Referenz für Bauteil')),
           ]),
         ],
         if(value!=null)Card(child:Padding(padding:const EdgeInsets.all(18),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
           const Text('BILDSCHÄTZUNG',style:TextStyle(fontSize:11,color:studioMuted,letterSpacing:1.2)),
           Text('${estimate(value)} mm',style:const TextStyle(fontSize:34,fontWeight:FontWeight.w800)),const SizedBox(height:12),
           Wrap(spacing:8,runSpacing:8,children:[
-            FilledButton(onPressed:()=>assign(value,estimated:true),child:const Text('Messung für Adapter')),
+            FilledButton(onPressed:()=>assign(value,estimated:true),child:const Text('Messung für Bauteil')),
             IconButton(tooltip:'Messwert kopieren',onPressed:()=>Clipboard.setData(ClipboardData(text:'${estimate(value)} mm')),icon:const Icon(Icons.copy_outlined)),
           ]),
         ]))),
         if(draft.first!=null||draft.second!=null)Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[
-          const Text('Für den Adapter vorgemerkt',style:TextStyle(fontWeight:FontWeight.w700)),const SizedBox(height:8),
+          const Text('Für das Bauteil vorgemerkt',style:TextStyle(fontWeight:FontWeight.w700)),const SizedBox(height:8),
           if(draft.first!=null)Text('Seite A: ${draft.first!.kind==DiameterKind.inner?'innen':'außen'} ${mm(draft.first!.diameter)} mm'),
           if(draft.second!=null)Text('Seite B: ${draft.second!.kind==DiameterKind.inner?'innen':'außen'} ${mm(draft.second!.diameter)} mm'),
-          const SizedBox(height:8),const Text('Oben „Zum Adapter“ übernimmt diese Maße und fragt fehlende Angaben ab.',style:TextStyle(fontSize:12)),
+          const SizedBox(height:8),const Text('Oben „Zum Bauteil“ übernimmt diese Maße und fragt fehlende Angaben ab.',style:TextStyle(fontSize:12)),
         ]))),
       ],
       const SizedBox(height:18),const Text('Frontal fotografieren. Referenz und Messstrecke müssen in derselben Ebene liegen. Perspektive und Linsenverzerrung können das Ergebnis verändern; Passmaße nachmessen.',style:TextStyle(fontSize:12,color:studioMuted)),

@@ -12,7 +12,7 @@ void main(){
       onPressed:()async{result=await Navigator.push<PlatePart>(context,MaterialPageRoute(builder:(_)=>AdapterPage(recognize:()async=>'innen 35 mm und außen 50 mm')));},child:const Text('Öffnen'))))));
     await tester.tap(find.text('Öffnen'));await tester.pumpAndSettle();
     await tester.tap(find.text('Sprechen'));await tester.pumpAndSettle();
-    expect(find.text('Wie lang soll der Adapter insgesamt sein? Angabe in Millimetern.'),findsOneWidget);
+    expect(find.text('Wie lang soll das Bauteil insgesamt sein? Angabe in Millimetern.'),findsOneWidget);
     expect(tester.widget<TextButton>(find.widgetWithText(TextButton,'Erstellen')).onPressed,isNull);
     for(final value in ['60','2,5','15']){
       await tester.enterText(find.byType(TextField),value);await tester.tap(find.text('Angabe übernehmen'));await tester.pumpAndSettle();

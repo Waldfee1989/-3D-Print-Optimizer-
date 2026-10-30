@@ -66,7 +66,7 @@ class AdapterDraft {
   String get question=>switch(next){
     AdapterField.first=>'Welchen Durchmesser braucht Seite A? Innen oder außen?',
     AdapterField.second=>'Welchen Durchmesser braucht Seite B? Innen oder außen?',
-    AdapterField.length=>'Wie lang soll der Adapter insgesamt sein? Angabe in Millimetern.',
+    AdapterField.length=>'Wie lang soll das Bauteil insgesamt sein? Angabe in Millimetern.',
     AdapterField.wall=>'Welche Wandstärke sollen die Öffnungen haben? Angabe in Millimetern.',
     AdapterField.socket=>'Wie lang soll der gerade Steckbereich je Seite sein? Angabe in Millimetern.',
     null=>'Sind diese Maße richtig?',
