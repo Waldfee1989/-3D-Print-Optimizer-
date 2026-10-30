@@ -10,6 +10,7 @@ on:
       - filament-scan
       - material-advice
       - project-optimizer
+      - simpler-app
     paths:
       - 'lib/**'
       - 'test/**'
@@ -222,7 +223,7 @@ jobs:
               await tester.tap(find.text('Mechanisches Teil / Gebrauchsteil'));
               await tester.tap(find.text('Speichern'));
               await tester.pumpAndSettle();
-              expect(find.text('Empfohlenes Material: PETG'), findsOneWidget);
+              expect(find.text('Filament: PETG'), findsOneWidget);
               expect((await loadPrintProjects()).single.fileName, 'test.stl');
               await tester.pumpWidget(const SizedBox());
             });

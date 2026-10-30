@@ -42,6 +42,11 @@ void main() {
   });
 
   Future<void> openCode(WidgetTester tester, String code) async {
+    if (find.text('Filamentcode eingeben').evaluate().isEmpty) {
+      await tester.scrollUntilVisible(find.text('Filamentlager'), 200);
+      await tester.tap(find.text('Filamentlager'));
+      await tester.pumpAndSettle();
+    }
     await tester.scrollUntilVisible(find.text('Filamentcode eingeben'), 200);
     await tester.tap(find.text('Filamentcode eingeben'));
     await tester.pumpAndSettle();
