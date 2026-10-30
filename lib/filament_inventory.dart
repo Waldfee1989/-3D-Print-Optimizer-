@@ -82,7 +82,21 @@ class _FilamentEditorState extends State<FilamentEditor> {
   }
 
   @override Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.existing == null ? 'Filament hinzufügen' : 'Filament bearbeiten'),
+    title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+      Text(widget.existing == null ? 'Filament hinzufügen' : 'Filament bearbeiten'),
+      Wrap(spacing: 8, children: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Abbrechen')),
+      FilledButton(onPressed: () {
+        if (!form.currentState!.validate()) return;
+        Navigator.pop(context, <String, dynamic>{
+          ...?widget.existing,
+          'barcode': filamentCode(code.text), 'brand': brand.text.trim(),
+          'material': material.text.trim(), 'color': color.text.trim(),
+          'grams': double.parse(grams.text.trim().replaceAll(',', '.')),
+        });
+      }, child: Text(widget.existing == null ? 'Hinzufügen' : 'Speichern')),
+      ]),
+    ]),
     content: SingleChildScrollView(child: Form(key: form, child: Column(
       mainAxisSize: MainAxisSize.min, children: [
         if (widget.existing == null && widget.barcode.isNotEmpty)
@@ -101,18 +115,7 @@ class _FilamentEditorState extends State<FilamentEditor> {
                 ? 'Bitte eine gültige Restmenge ab 0 g eintragen.' : null;
           }),
       ]))),
-    actions: [
-      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Abbrechen')),
-      FilledButton(onPressed: () {
-        if (!form.currentState!.validate()) return;
-        Navigator.pop(context, <String, dynamic>{
-          ...?widget.existing,
-          'barcode': filamentCode(code.text), 'brand': brand.text.trim(),
-          'material': material.text.trim(), 'color': color.text.trim(),
-          'grams': double.parse(grams.text.trim().replaceAll(',', '.')),
-        });
-      }, child: Text(widget.existing == null ? 'Hinzufügen' : 'Speichern')),
-    ],
+
   );
 }
 

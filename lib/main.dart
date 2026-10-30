@@ -15,7 +15,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'app_updates.dart';
 import 'filament_inventory.dart';
 import 'filament_scanner.dart';
-import 'material_advice.dart';
+import 'project_optimizer.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -92,7 +92,13 @@ class _HomePageState extends State<HomePage> {
     String pr = printer, sl = slicer, nz = nozzle;
     final result = await showDialog<bool>(context: context, builder: (ctx) =>
       StatefulBuilder(builder: (ctx, update) => AlertDialog(
-        title: const Text('Ersteinrichtung'),
+        title: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          const Text('Ersteinrichtung'),
+          Wrap(spacing: 8, children: [
+            TextButton(onPressed: ()=>Navigator.pop(ctx,false), child: const Text('Abbrechen')),
+            FilledButton(onPressed: ()=>Navigator.pop(ctx,true), child: const Text('Speichern')),
+          ]),
+        ]),
         content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
           const Text('Drucker, Slicer und Düse auswählen. Später änderbar.'),
           TextField(controller: TextEditingController(text: pr),
@@ -106,10 +112,7 @@ class _HomePageState extends State<HomePage> {
             items: ['0.2','0.4','0.6','0.8'].map((x)=>DropdownMenuItem(value:x,child:Text(x))).toList(),
             onChanged: (v)=>update(()=>nz=v??nz)),
         ])),
-        actions: [
-          TextButton(onPressed: ()=>Navigator.pop(ctx,false), child: const Text('Abbrechen')),
-          FilledButton(onPressed: ()=>Navigator.pop(ctx,true), child: const Text('Speichern')),
-        ],
+
       )));
     if (result == true) {
       setState(() { printer=pr; slicer=sl; nozzle=nz; configured=true; });
@@ -234,12 +237,17 @@ class _HomePageState extends State<HomePage> {
         Card(child:ListTile(title:Text(printer),
           subtitle:Text('$slicer · Düse $nozzle mm'),leading:const Icon(Icons.print))),
         const SizedBox(height: 12),
-        Card(child: ListTile(leading: const Icon(Icons.lightbulb_outline),
-          title: const Text('Materialempfehlung'),
-          subtitle: const Text('Deko, Gebrauchsteil, draußen oder biegsam?'),
+        Card(child: ListTile(leading: const Icon(Icons.folder_open),
+          title: const Text('Datei laden und Druck optimieren'),
+          subtitle: const Text('STL / 3MF öffnen → Fragen beantworten → Empfehlung'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) =>
-            MaterialAdvicePage(quality: qualityMode, nozzle: nozzle))))),
+            ModelPreviewPage(printer: printer, slicer: slicer, nozzle: nozzle, quality: qualityMode))))),
+        Card(child: ListTile(leading: const Icon(Icons.folder_copy_outlined),
+          title: const Text('Meine Druckprojekte'),
+          subtitle: const Text('Gespeicherte Antworten und Einstellungen'),
+          trailing: const Icon(Icons.chevron_right),
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PrintProjectsPage())))),
         const Text('Druckoptimierung', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
         const SizedBox(height: 8),
         Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(
@@ -266,10 +274,10 @@ class _HomePageState extends State<HomePage> {
         Card(child: ListTile(
           leading: const Icon(Icons.view_in_ar),
           title: const Text('STL / 3MF öffnen'),
-          subtitle: const Text('Modell ansehen, drehen und Abmessungen prüfen'),
+          subtitle: const Text('Modell ansehen und anschließend Druckteil festlegen'),
           trailing: const Icon(Icons.chevron_right),
           onTap: () => Navigator.push(context,
-            MaterialPageRoute(builder: (_) => const ModelPreviewPage())),
+            MaterialPageRoute(builder: (_) => ModelPreviewPage(printer: printer, slicer: slicer, nozzle: nozzle, quality: qualityMode))),
         )),
         const SizedBox(height:12),
         const Text('Mein Filamentlager',style:TextStyle(fontSize:22,fontWeight:FontWeight.bold)),
@@ -448,7 +456,9 @@ class _MeshReader {
 }
 
 class ModelPreviewPage extends StatefulWidget {
-  const ModelPreviewPage({super.key});
+  const ModelPreviewPage({super.key, this.printer = 'Anycubic Kobra S1',
+    this.slicer = 'Anycubic Slicer Next', this.nozzle = '0.4', this.quality = 'Maximale Qualität'});
+  final String printer, slicer, nozzle, quality;
   @override State<ModelPreviewPage> createState() => _ModelPreviewPageState();
 }
 
@@ -530,7 +540,14 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
   @override Widget build(BuildContext context) {
     final m = mesh;
     return Scaffold(
-      appBar: AppBar(title: const Text('3D-Modellvorschau')),
+      appBar: AppBar(title: const Text('3D-Modellvorschau'), actions: [
+        TextButton(onPressed: m == null || loading ? null : () => Navigator.push(context,
+          MaterialPageRoute(builder: (_) => ProjectOptimizerPage(project: PrintProject(
+            id: DateTime.now().microsecondsSinceEpoch.toString(), fileName: fileName ?? 'Modell',
+            dimensions: '${m.size.x.toStringAsFixed(1)} × ${m.size.y.toStringAsFixed(1)} × ${m.size.z.toStringAsFixed(1)} (Modellkoordinaten, normalerweise mm)',
+            printer: widget.printer, slicer: widget.slicer, nozzle: widget.nozzle,
+            priority: widget.quality)))), child: const Text('OK')),
+      ]),
       body: ListView(padding: const EdgeInsets.all(16), children: [
         FilledButton.icon(onPressed: loading ? null : openModel,
           icon: const Icon(Icons.folder_open),
