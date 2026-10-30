@@ -55,7 +55,7 @@ class Handler(BaseHTTPRequestHandler):
         token=os.environ.get('PHOTO_PART_ACCESS_TOKEN','')
         if len(token)<32:
             self.reply(503,{'error':'Der Fotodienst ist noch nicht eingerichtet.'});return
-        if not hmac.compare_digest(self.headers.get('Authorization',''),'Bearer '+token):
+        if not hmac.compare_digest(self.headers.get('Authorization','').encode('utf-8'),('Bearer '+token).encode('utf-8')):
             self.reply(401,{'error':'Zugangscode des Fotodienstes ist ungültig.'});return
         if self.path not in ['/v1/analyze','/v1/generate']:
             self.reply(404,{'error':'Unbekannte Anfrage.'});return
@@ -85,7 +85,7 @@ class Handler(BaseHTTPRequestHandler):
                     recent.append(now)
                 images=data['images'];previous=data.get('previous')
                 if previous is not None: validate_plan(previous,len(images))
-                plan=analyze(images,answers,previous,key,model)
+                plan=analyze(images,answers,previous,key,model,data.get('clarification',''))
                 self.reply(200,plan)
             else:
                 plan=validate_plan(data['plan'],int(data['image_count']))

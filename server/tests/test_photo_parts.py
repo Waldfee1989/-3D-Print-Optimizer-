@@ -85,9 +85,10 @@ class VisionTests(unittest.TestCase):
             self.assertFalse(payload['store']);self.assertTrue(payload['text']['format']['strict'])
             self.assertEqual(payload['model'],'configured-vision-model')
             self.assertEqual(len(payload['input'][0]['content']),5)
+            self.assertEqual(json.loads(payload['input'][0]['content'][0]['text'])['user_clarification'],'Zapfen genauer zeigen')
             return io.BytesIO(json.dumps(result).encode())
         with patch('photo_parts.vision.urllib.request.urlopen',side_effect=respond):
-            p=analyze([self.photo()]*4,{'outer':50,'inner':35,'length':60},None,'test-only-key','configured-vision-model')
+            p=analyze([self.photo()]*4,{'outer':50,'inner':35,'length':60},None,'test-only-key','configured-vision-model','Zapfen genauer zeigen')
         self.assertEqual(p['name'],'Hülse')
     def test_wrong_photo_counts_and_mutating_existing_questions_are_rejected(self):
         with self.assertRaises(ValueError):prepare_images([self.photo()]*3)

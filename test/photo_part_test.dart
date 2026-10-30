@@ -15,7 +15,7 @@ Map<String,dynamic> planFixture(String status)=>{
   'dimensions':[
     {'id':'reference','label':'Gesamtlänge einschließlich Clips','help':'Von äußerstem Ende bis äußerstem Ende einschließlich Clips messen.','kind':'mm','choices':<String>[],'image_index':0,'a':[.1,.5],'b':[.9,.5]},
     {'id':'pin','label':'Zapfendurchmesser','help':'Nur den kleinen Zapfen messen, nicht den Querpfosten.','kind':'mm','choices':<String>[],'image_index':1,'a':[.4,.3],'b':[.6,.3]},
-  ],'operations':<Object>[],'assumptions':<String>[],'blockers':<String>[],
+  ],'operations':status=='ready'?[{'op':'add','kind':'box','size':['reference','pin','2'],'position':['0','0','0'],'rotation':[0,0,0]}]:<Object>[],'assumptions':<String>[],'blockers':<String>[],
 };
 
 Uint8List stlFixture(){
@@ -26,8 +26,9 @@ Uint8List stlFixture(){
 }
 class FakePhotoService extends PhotoPartService{
   FakePhotoService():super(Uri.parse('https://photo-service.example'), 'test-code-never-used-on-network-123456789');
-  int analyses=0,generations=0;Map<String,Object>? lastAnswers;
-  @override Future<PhotoPartPlan> analyze(List<Uint8List> images,Map<String,Object> answers,PhotoPartPlan? previous)async{
+  int analyses=0,generations=0;Map<String,Object>? lastAnswers;String? clarificationReceived;
+  @override Future<PhotoPartPlan> analyze(List<Uint8List> images,Map<String,Object> answers,PhotoPartPlan? previous,{String? clarification})async{
+    clarificationReceived=clarification;
     expect(images.length,4);analyses++;lastAnswers=Map.of(answers);
     return PhotoPartPlan.parse(planFixture(answers.length==2?'ready':'need_measurements'),4,previous:previous);
   }
@@ -73,12 +74,17 @@ void main(){
     await reveal(tester,find.text('Bauteil analysieren'));await tester.tap(find.text('Bauteil analysieren'));await tester.pumpAndSettle();
     for(final entry in [('reference','15,7 cm'),('pin','2,5 mm')]){
       final target=find.byKey(ValueKey('photo-measure-${entry.$1}'));await reveal(tester,target);
+      await tester.runAsync(()=>precacheImage(MemoryImage(photos.first.png),tester.element(find.byType(AnnotatedPhotoQuestion))));await tester.pump();
       if(entry.$1=='reference')await tester.runAsync(()async{
         final render=boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary,image=await render.toImage(pixelRatio:1);
         final bytes=await image.toByteData(format:ui.ImageByteFormat.png);image.dispose();if(bytes!=null)print('PHOTO_PART_QUESTION_PNG:${base64Encode(bytes.buffer.asUint8List())}');
       });
       await tester.tap(target);await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const ValueKey('photo-answer-input')),entry.$2);await tester.tap(find.text('Angabe bestätigen'));await tester.pumpAndSettle();
+      if(entry.$1=='reference'){
+        await reveal(tester,find.text('Messstelle unklar – genauer zeigen'));await tester.tap(find.text('Messstelle unklar – genauer zeigen'));await tester.pumpAndSettle();
+        expect(service.clarificationReceived,contains('pin'));expect(service.lastAnswers,{'reference':157.0});
+      }
     }
     expect(tester.widget<TextButton>(find.widgetWithText(TextButton,'3D erzeugen')).onPressed,isNull);
     await reveal(tester,find.text('Mit Angaben weiter auswerten'));await tester.tap(find.text('Mit Angaben weiter auswerten'));await tester.pumpAndSettle();

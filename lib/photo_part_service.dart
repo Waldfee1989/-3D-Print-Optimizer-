@@ -47,6 +47,7 @@ class PhotoPartPlan {
       if(current==null||current.label!=old.label||current.help!=old.help||current.isLength!=old.isLength||jsonEncode(current.choices)!=jsonEncode(old.choices))throw const FormatException('Die Analyse hat eine bestehende Maßfrage verändert.');
     }}
     if(json['operations'] is! List||(json['operations'] as List).length>96)throw const FormatException('Zu komplexe Geometriebeschreibung.');
+    if(json['status']=='ready'&&((json['operations'] as List).isEmpty||!questions.any((q)=>q.isLength)))throw const FormatException('Ein erzeugbares Modell und Referenzmaß fehlen.');
     return PhotoPartPlan._(json,questions);
   }
 }
@@ -86,9 +87,9 @@ class PhotoPartService {
       return data;
     }finally{client.close(force:true);if(identical(_active,client))_active=null;}
   }
-  Future<PhotoPartPlan> analyze(List<Uint8List> images,Map<String,Object> answers,PhotoPartPlan? previous)async{
+  Future<PhotoPartPlan> analyze(List<Uint8List> images,Map<String,Object> answers,PhotoPartPlan? previous,{String? clarification})async{
     if(images.length<4||images.length>8)throw const FormatException('Vier bis acht Fotos auswählen.');
-    final data=await _post('/v1/analyze',{'images':images.map(base64Encode).toList(),'answers':answers,'previous':previous?.json},2*1024*1024);
+    final data=await _post('/v1/analyze',{'images':images.map(base64Encode).toList(),'answers':answers,'previous':previous?.json,'clarification':clarification??''},2*1024*1024);
     return PhotoPartPlan.parse(Map<String,dynamic>.from(jsonDecode(utf8.decode(data)) as Map),images.length,previous:previous);
   }
   Future<Uint8List> generate(PhotoPartPlan plan,Map<String,Object> answers,int imageCount,bool approved)async{

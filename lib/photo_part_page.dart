@@ -129,14 +129,14 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
     url.dispose();code.dispose();
     if(value!=null&&mounted)setState(()=>service=value);
   }
-  Future<void> analyze()async{
+  Future<void> analyze({String? clarification})async{
     if(photos.length<4||!consent)return;
     if(service==null){await configure();if(service==null||!mounted)return;}
     setState((){busy=true;error=null;});
     try{
-      final next=await service!.analyze(photos.map((p)=>p.png).toList(),Map.of(answers),plan);
+      final next=await service!.analyze(photos.map((p)=>p.png).toList(),Map.of(answers),plan,clarification:clarification);
       if(!mounted)return;
-      setState((){plan=next;needsAnalysis=false;approved=false;stl=null;part=null;selected=null;});await persist();
+      setState((){plan=next;needsAnalysis=false;approved=false;stl=null;part=null;if(clarification==null)selected=null;});await persist();
     }catch(e){failure(e);}finally{if(mounted)setState(()=>busy=false);}
   }
   Future<void> answer(PhotoPartQuestion question)async{
@@ -212,6 +212,7 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
           if(current.imageIndex>=0)AnnotatedPhotoQuestion(photo:photos[current.imageIndex],question:current,value:answers[current.id],onTap:()=>answer(current!))
           else const Text('Die Messstelle ist auf den Fotos nicht sicher sichtbar. Bitte der Beschreibung folgen; bei Unklarheit eine zusätzliche Ansicht ergänzen.'),
           FilledButton(onPressed:busy?null:()=>answer(current!),child:const Text('Maß oder Antwort eintragen')),
+          TextButton.icon(onPressed:busy||!consent?null:(){setState(()=>selected=current!.id);analyze(clarification:'Messstelle ${current!.id} ist unklar. Bitte genauer erklären und im am besten geeigneten Foto zeigen.');},icon:const Icon(Icons.help_outline),label:const Text('Messstelle unklar – genauer zeigen')),
         ],
         if(plan!.questions.isNotEmpty)...[const SizedBox(height:16),const Text('Bestätigte Angaben',style:TextStyle(fontWeight:FontWeight.w700)),
           for(final q in plan!.questions.where((q)=>answers.containsKey(q.id)))ListTile(contentPadding:EdgeInsets.zero,title:Text(q.label),subtitle:Text('${answers[q.id]}${q.isLength?' mm':''}'),trailing:IconButton(tooltip:'${q.label} ändern',onPressed:busy?null:(){setState(()=>selected=q.id);answer(q);},icon:const Icon(Icons.edit_outlined))),
