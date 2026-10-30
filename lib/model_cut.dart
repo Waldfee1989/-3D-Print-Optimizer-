@@ -75,7 +75,7 @@ class CutDialogState extends State<CutDialog> {
       const Text('Modell teilen'),const SizedBox(height:12),
       SizedBox(width:double.infinity,child:FilledButton.icon(icon:const Icon(Icons.content_cut),onPressed:(){
         if(form.currentState!.validate())Navigator.pop(context,CutSettings(axis,fraction,connection,
-          connection==0?4:number(diameter.text),connection==0?5:number(length.text),connection==0?.2:number(clearance.text),connection==2?number(pitch.text):2));
+          connection==0?4:number(diameter.text),connection==0?5:number(length.text),connection == 0 ? 0.2 : number(clearance.text),connection==2?number(pitch.text):2));
       },label:const Text('Teilen'))),
     ]),
     content:SizedBox(width:420,child:SingleChildScrollView(child:Form(key:form,child:Column(mainAxisSize:MainAxisSize.min,crossAxisAlignment:CrossAxisAlignment.start,children:[
