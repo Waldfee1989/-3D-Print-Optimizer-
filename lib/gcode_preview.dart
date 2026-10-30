@@ -24,7 +24,7 @@ GcodePreview parseGcode((String,PrinterBed) input){
   final text=input.$1,bed=input.$2;
   if(text.length>128*1024*1024||!bed.valid)throw const FormatException('G-Code ist zu groß oder der Bauraum fehlt.');
   final paths=<_Floats>[],numbers=<int>[],heights=<double>[];
-  var x=0.0,y=0.0,z=0.0,e=0.0,absolute=true,absoluteE=true,layer=-1,feature=0,moves=0,count=0,outside=false;
+  var x=0.0,y=0.0,z=0.0,e=0.0,retracted=0.0,absolute=true,absoluteE=true,layer=-1,feature=0,moves=0,count=0,outside=false;
   double? seconds,metres;
   final words=RegExp(r'([XYZE])\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+))');
   var offset=0;
@@ -63,10 +63,21 @@ GcodePreview parseGcode((String,PrinterBed) input){
     final nx=axis('X',x),ny=axis('Y',y),nz=axis('Z',z);
     final ne=values.containsKey('E')?(absoluteE?values['E']!:e+values['E']!):e;
     if(nx<-.05||ny<-.05||nz<-.05||nx>bed.width+.05||ny>bed.depth+.05||nz>bed.height+.05)outside=true;
+    // G92 changes the E coordinate, not the amount still retracted. Account
+    // for pure-E recovery as well as recovery spread across XY moves/layers.
+    final delta=ne-e,recovery=delta>0?math.min(delta,retracted):0.0;
+    if(delta<0){retracted-=delta;}else{retracted=math.max(0,retracted-recovery);}
     if(layer>=0&&((nx-x).abs()>1e-6||(ny-y).abs()>1e-6)){
-      if(++count>2000000)throw const FormatException('Zu viele Druckbahnen für die Vorschau.');
-      final extrusion=ne>e+1e-6;
-      for(final value in [x,y,nx,ny,(extrusion?feature:5).toDouble()]){paths[layer].add(value);}
+      void segment(double ax,double ay,double bx,double by,int type){
+        if(++count>2000000)throw const FormatException('Zu viele Druckbahnen für die Vorschau.');
+        for(final value in [ax,ay,bx,by,type.toDouble()]){paths[layer].add(value);}
+      }
+      final extrusion=delta-recovery>1e-6;
+      if(extrusion&&recovery>1e-6){
+        // Linear E/XY interpolation: only the part after recovery deposits.
+        final fraction=recovery/delta,mx=x+(nx-x)*fraction,my=y+(ny-y)*fraction;
+        segment(x,y,mx,my,5);segment(mx,my,nx,ny,feature);
+      }else{segment(x,y,nx,ny,extrusion?feature:5);}
       if(extrusion){moves++;heights[layer]=nz;}
     }
     x=nx;y=ny;z=nz;e=ne;

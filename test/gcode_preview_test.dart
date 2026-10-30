@@ -32,6 +32,35 @@ G1 X0 Y-10 E0.2
     final last=result.layers[1].segments;
     expect(last.sublist(last.length-5),[20,20,20,10,3]);
   });
+  test('XY recovery is travel until all retracted filament is recovered',(){
+    final result=parseGcode((';LAYER:0\nG1 X10 Y10 Z0.2 E1\nG1 E0\n'
+      'G1 X20 E0.5\nG1 X30 E1\nG1 X40 E2',bed));
+    expect(result.extrusionMoves,2);
+    expect(result.layers.single.segments.sublist(5),[
+      10,10,20,10,5, 20,10,30,10,5, 30,10,40,10,0,
+    ]);
+  });
+  test('Mixed recovery and deposition splits a linear path after G92',(){
+    final result=parseGcode((';LAYER:0\nG1 X10 Y10 Z0.2 E1\nG1 E0\n'
+      'G92 E0\nG1 X30 E2',bed));
+    expect(result.extrusionMoves,2);
+    expect(result.layers.single.segments.sublist(5),[
+      10,10,20,10,5, 20,10,30,10,0,
+    ]);
+  });
+  test('Relative recovery persists across layers and pure E primes repay it',(){
+    final result=parseGcode(('M83\n;LAYER:0\nG1 X10 Y10 Z0.2 E1\n'
+      'G1 E-2\nG1 E0.5\n;LAYER:1\nG0 Z0.4\nG92 E0\n'
+      'G1 X20 E1\nG1 X40 E1',bed));
+    expect(result.extrusionMoves,2);
+    expect(result.layers[1].z,.4);
+    expect(result.layers[1].segments,[
+      10,10,20,10,5, 20,10,30,10,5, 30,10,40,10,0,
+    ]);
+  });
+  test('Recovery alone cannot turn an empty job into printable G-code',(){
+    expect(()=>parseGcode((';LAYER:0\nG1 E-1\nG1 X10 E0',bed)),throwsFormatException);
+  });
   test('Outside-bed moves and unsupported arcs cannot appear as a valid preview',(){
     expect(parseGcode((';LAYER:0\nG1 X251 Y10 E1',bed)).outsideBed,isTrue);
     expect(()=>parseGcode((';LAYER:0\nG2 X10 Y10 E1',bed)),throwsFormatException);
