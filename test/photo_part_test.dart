@@ -86,7 +86,7 @@ void main(){
     final photos=(await tester.runAsync(imagesFixture))!,service=FakePhotoService(),boundary=GlobalKey();
     await tester.pumpWidget(RepaintBoundary(key:boundary,child:MaterialApp(debugShowCheckedModeBanner:false,theme:studioTheme(),home:PhotoPartPage(service:service,restoreDraft:false,choose:(_,__)async=>photos.take(4).toList()))));await tester.pumpAndSettle();
     await tester.tap(find.text('Fotos laden'));await tester.pumpAndSettle();
-    expect(service.analyses,0);expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Bauteil analysieren')).onPressed,isNull);
+    expect(service.analyses,0);await reveal(tester,find.text('Bauteil analysieren'));expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton,'Bauteil analysieren')).onPressed,isNull);
     await reveal(tester,find.text('Fotos zur Online-Auswertung senden'));await tester.tap(find.text('Fotos zur Online-Auswertung senden'));await tester.pumpAndSettle();
     await reveal(tester,find.text('Bauteil analysieren'));await tester.tap(find.text('Bauteil analysieren'));await tester.pumpAndSettle();
     for(final entry in [('reference','15,7 cm'),('pin','2,5 mm')]){
