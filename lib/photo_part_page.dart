@@ -170,6 +170,7 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
       if(bytes==null)throw const FormatException('Fotopaket konnte nicht erstellt werden.');
       final path=await FilePicker.platform.saveFile(dialogTitle:'Fotos und Anfrage speichern',fileName:'Foto_Bauteil_Chat.zip',
         type:FileType.custom,allowedExtensions:['zip'],bytes:Uint8List.fromList(bytes));
+      if(path!=null&&!Platform.isAndroid&&!Platform.isIOS)await File(path).writeAsBytes(bytes,flush:true);
       if(path!=null&&mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('ZIP gespeichert. Im Chat hochladen oder entpacken und Fotos mit Anfrage.txt anhängen.')));
     }catch(e){failure(e);}finally{if(mounted)setState(()=>busy=false);}
   }
@@ -264,7 +265,7 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
       if(stl!=null)IconButton(tooltip:'STL speichern',onPressed:busy?null:saveStl,icon:const Icon(Icons.save_outlined)),
       IconButton(tooltip:'Neuer Fotoentwurf',onPressed:busy?null:reset,icon:const Icon(Icons.note_add_outlined)),
       if(part!=null)TextButton(onPressed:busy?null:()=>Navigator.pop(context,part),child:const Text('Übernehmen'))
-      else TextButton(onPressed:busy||!canGenerate?null:generate,child:const Text('3D erzeugen')),
+      else if(service!=null)TextButton(onPressed:busy||!canGenerate?null:generate,child:const Text('3D erzeugen')),
     ]),body:SafeArea(top:false,child:ListView(padding:const EdgeInsets.all(20),children:[
       const StudioHeading('Dein Teil als Druckmodell.',subtitle:'4–8 Ansichten aufnehmen, Maße klären, 3D prüfen.'),
       const Text('Vorne, hinten, links, rechts; bei Bedarf oben, unten und schräg. Dasselbe Bauteil gut beleuchtet aufnehmen.'),const SizedBox(height:12),
