@@ -47,6 +47,9 @@ class MainActivity : FlutterActivity() {{
     app = root.find("application")
     if app is None:
         raise ValueError("Android-Anwendung fehlt.")
+    # Stock Kobra LAN uploads use HTTP. The Dart client restricts requests to
+    # a literal private printer IPv4 and validates the returned upload origin.
+    app.set(f"{{{ANDROID}}}usesCleartextTraffic", "true")
     provider = ET.SubElement(app, "provider", {
         f"{{{ANDROID}}}name": f"{package}.OptimizerUpdateFileProvider",
         f"{{{ANDROID}}}authorities": "${applicationId}.optimizer_updates",
