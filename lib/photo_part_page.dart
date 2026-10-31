@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:archive/archive.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -47,6 +49,7 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
   final photos=<PhotoPartImage>[],answers=<String,Object>{};
   PhotoPartPlan? plan;PhotoPartService? service;String? error,selected;
   bool busy=false,consent=false,approved=false,needsAnalysis=true;
+  String manualNotes='';
   Uint8List? stl;PlatePart? part;
   Directory? directory;
   Future<void> writes=Future<void>.value();
@@ -72,6 +75,8 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
           if(values.length>32||values.values.any((v)=>v is! String&&v is! num))throw const FormatException('Ungültige gespeicherte Maße.');
           for(final entry in values.entries){answers[entry.key]=entry.value as Object;}
           needsAnalysis=saved['needs_analysis']!=false;
+          manualNotes=(saved['manual_notes'] is String?saved['manual_notes'] as String:'');
+          if(manualNotes.length>6000)throw const FormatException('Beschreibung ist zu lang.');
         }
       }
       if(Platform.isAndroid&&widget.choose==null){
@@ -85,7 +90,7 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
   }
   Future<void> persist(){
     final target=directory;if(target==null)return Future<void>.value();
-    final images=List<PhotoPartImage>.of(photos),metadata=jsonEncode({'photos':photos.map((p)=>p.id).toList(),'plan':plan?.json,'answers':answers,'needs_analysis':needsAnalysis});
+    final images=List<PhotoPartImage>.of(photos),metadata=jsonEncode({'photos':photos.map((p)=>p.id).toList(),'plan':plan?.json,'answers':answers,'needs_analysis':needsAnalysis,'manual_notes':manualNotes});
     final operation=writes.then((_)async{
       for(final photo in images){final file=File('${target.path}/${photo.id}.png');if(!await file.exists())await file.writeAsBytes(photo.png,flush:true);}
       final file=File('${target.path}/draft.json'),temporary=File('${target.path}/draft.tmp'),backup=File('${target.path}/draft.bak');
@@ -113,6 +118,76 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
       }
       if(!mounted)return;
       setState((){photos.addAll(additions.take(capacity));if(additions.isNotEmpty){needsAnalysis=true;approved=false;part=null;stl=null;}});await persist();
+    }catch(e){failure(e);}finally{if(mounted)setState(()=>busy=false);}
+  }
+  String manualRequest()=>[
+    'Bitte hilf mir, dieses Bauteil anhand der beigefügten ${photos.length} Fotos als STL nachzukonstruieren.',
+    'Die Fotos sind in der Reihenfolge Foto_1.png bis Foto_${photos.length}.png nummeriert.',
+    'Bauteil, Verwendungszweck und bereits gemessene Referenzmaße:',
+    manualNotes.trim().isEmpty?'Noch keine Maße eingetragen. Bitte zuerst nach mindestens einem eindeutig beschriebenen Referenzmaß fragen.':manualNotes.trim(),
+    if(plan!=null)...[
+      'Bisherige Beschreibung: ${plan!.summary}',
+      'Bestätigte Angaben (Bedeutung und Wert beibehalten):',
+      for(final q in plan!.questions.where((q)=>answers.containsKey(q.id)))
+        '${q.label}: ${answers[q.id]}${q.isLength?' mm':''}. Messumfang: ${q.help}',
+    ],
+    'Frage gezielt nach fehlenden Maßen und kläre Widersprüche. Zeige jede gesuchte Messstrecke möglichst in einer beschrifteten Skizze oder einem markierten Foto.',
+    'Unterscheide Innen- und Außenmaß, Clipöffnung und Zapfen. Erfinde keine Maße. Lass mich Näherungen ausdrücklich bestätigen.',
+    'Erstelle erst nach Klärung eine herunterladbare binäre STL in Millimetern, wenn dir geeignete Werkzeuge zur Verfügung stehen. Falls das nicht möglich ist, sage es ausdrücklich.',
+    'Ich importiere die STL anschließend manuell in meine App und prüfe dort Vorschau und Abmessungen.',
+  ].join('\n\n');
+  Future<void> editManualNotes()async{
+    final controller=TextEditingController(text:manualNotes);
+    final route=DialogRoute<String>(context:context,builder:(ctx)=>AlertDialog(scrollable:true,
+      title:const Text('Bauteil und bekannte Maße'),
+      content:TextField(controller:controller,maxLines:7,maxLength:6000,
+        decoration:const InputDecoration(hintText:'Zum Beispiel: Zaunelement, Gesamtlänge mit Clips 157 mm. Foto 1 zeigt die Vorderseite.')),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('Abbrechen')),
+        FilledButton(onPressed:()=>Navigator.pop(ctx,controller.text),child:const Text('Speichern'))]));
+    final value=await Navigator.of(context).push(route);await route.completed;controller.dispose();
+    if(value==null||!mounted)return;
+    setState(()=>manualNotes=value);
+    try{await persist();}catch(e){failure(e);}
+  }
+  Future<void> copyManualRequest()async{
+    try{
+      await Clipboard.setData(ClipboardData(text:manualRequest()));
+      if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Anfrage kopiert. Im Chat einfügen und die Fotos selbst anhängen.')));
+    }catch(e){failure(e);}
+  }
+  Future<void> exportManualRequest()async{
+    if(photos.length<4||busy)return;
+    setState((){busy=true;error=null;});
+    try{
+      final archive=Archive();
+      final request=utf8.encode(manualRequest());
+      archive.addFile(ArchiveFile('Anfrage.txt',request.length,request));
+      for(var i=0;i<photos.length;i++){
+        final bytes=photos[i].png;
+        archive.addFile(ArchiveFile('Foto_${i+1}.png',bytes.length,bytes));
+      }
+      final bytes=ZipEncoder().encode(archive);
+      if(bytes==null)throw const FormatException('Fotopaket konnte nicht erstellt werden.');
+      final path=await FilePicker.platform.saveFile(dialogTitle:'Fotos und Anfrage speichern',fileName:'Foto_Bauteil_Chat.zip',
+        type:FileType.custom,allowedExtensions:['zip'],bytes:Uint8List.fromList(bytes));
+      if(path!=null&&mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('ZIP gespeichert. Im Chat hochladen oder entpacken und Fotos mit Anfrage.txt anhängen.')));
+    }catch(e){failure(e);}finally{if(mounted)setState(()=>busy=false);}
+  }
+  Future<void> importManualStl()async{
+    if(busy)return;
+    setState((){busy=true;error=null;});
+    try{
+      final result=await FilePicker.platform.pickFiles(type:FileType.custom,allowedExtensions:['stl'],withData:false);
+      if(result==null)return;
+      final file=result.files.single;
+      if(file.size>26*1024*1024)throw const FormatException('Die STL darf höchstens 26 MB groß sein.');
+      final path=file.path;
+      if(path==null)throw const FormatException('STL-Datei konnte nicht geöffnet werden.');
+      final source=File(path);
+      if(await source.length()>26*1024*1024)throw const FormatException('Die STL darf höchstens 26 MB groß sein.');
+      final bytes=await source.readAsBytes();
+      final model=await compute(photoPartFromStl,bytes);
+      if(mounted)setState((){stl=bytes;part=model;});
     }catch(e){failure(e);}finally{if(mounted)setState(()=>busy=false);}
   }
   Future<void> configure()async{
@@ -176,7 +251,7 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
   Future<void> reset()async{
     final yes=await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('Neues Foto-Bauteil?'),content:const Text('Der aktuelle Fotoentwurf mit seinen Maßangaben wird entfernt. Bereits gespeicherte STL-Dateien und Druckprojekte bleiben erhalten.'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('Abbrechen')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('Neuer Entwurf'))]));
     if(yes!=true||!mounted)return;
-    setState((){busy=true;photos.clear();answers.clear();plan=null;part=null;stl=null;selected=null;approved=false;needsAnalysis=true;error=null;});
+    setState((){busy=true;manualNotes='';photos.clear();answers.clear();plan=null;part=null;stl=null;selected=null;approved=false;needsAnalysis=true;error=null;});
     try{await persist();if(directory!=null){await for(final file in directory!.list()){if(file is File&&file.path.endsWith('.png'))await file.delete();}}}catch(e){failure(e);}finally{if(mounted)setState(()=>busy=false);}
   }
   @override void dispose(){service?.cancel();super.dispose();}
@@ -200,8 +275,21 @@ class _PhotoPartPageState extends State<PhotoPartPage>{
       if(photos.isNotEmpty)SizedBox(height:92,child:ListView(scrollDirection:Axis.horizontal,children:[for(var i=0;i<photos.length;i++)Padding(padding:const EdgeInsets.only(right:8),child:Column(children:[
         SizedBox(height:66,width:76,child:Image.memory(photos[i].png,fit:BoxFit.cover)),Text('Foto ${i+1}',style:const TextStyle(fontSize:11)),
       ]))])),
-      CheckboxListTile(contentPadding:EdgeInsets.zero,title:const Text('Fotos zur Online-Auswertung senden'),subtitle:const Text('Erst beim Analysieren werden diese Fotos und bestätigte Angaben an den eingerichteten Fotodienst übermittelt.'),value:consent,onChanged:busy?null:(v)=>setState(()=>consent=v==true)),
-      if(part==null)FilledButton.icon(onPressed:busy||photos.length<4||!consent?null:analyze,icon:const Icon(Icons.auto_awesome_outlined),label:Text(plan==null?'Bauteil analysieren':'Mit Angaben weiter auswerten')),
+      const SizedBox(height:16),
+      const Text('Manuell mit ChatGPT',style:TextStyle(fontSize:20,fontWeight:FontWeight.w700)),
+      const Text('1. Fotos und bekannte Maße vorbereiten. 2. Paket im Chat hochladen und Rückfragen klären. 3. Die dort erstellte binäre STL herunterladen und hier importieren. Die App lädt dabei nichts automatisch hoch und benötigt keinen Fotodienst.'),
+      const SizedBox(height:8),
+      OutlinedButton.icon(onPressed:busy?null:editManualNotes,icon:const Icon(Icons.straighten),label:const Text('Bauteil und Maße eintragen')),
+      if(manualNotes.isNotEmpty)Text(manualNotes),
+      OutlinedButton.icon(onPressed:busy||photos.length<4?null:copyManualRequest,icon:const Icon(Icons.copy_outlined),label:const Text('Anfrage kopieren')),
+      FilledButton.icon(onPressed:busy||photos.length<4?null:exportManualRequest,icon:const Icon(Icons.folder_zip_outlined),label:const Text('Fotos und Anfrage als ZIP speichern')),
+      OutlinedButton.icon(onPressed:busy?null:importManualStl,icon:const Icon(Icons.file_open_outlined),label:const Text('STL aus dem Chat importieren')),
+      const Text('Eine STL enthält keine Einheit. Importiert wird in Millimetern. Die Vorschau prüft das Dateiformat und die Abmessungen; Maßhaltigkeit und geschlossene Flächen bitte zusätzlich prüfen.'),
+      if(service!=null) ...[
+        const Divider(),
+        CheckboxListTile(contentPadding:EdgeInsets.zero,title:const Text('Fotos zur Online-Auswertung senden'),subtitle:const Text('Erst beim Analysieren werden diese Fotos und bestätigte Angaben an den eingerichteten Fotodienst übermittelt.'),value:consent,onChanged:busy?null:(v)=>setState(()=>consent=v==true)),
+        if(part==null)FilledButton.icon(onPressed:busy||photos.length<4||!consent?null:analyze,icon:const Icon(Icons.auto_awesome_outlined),label:Text(plan==null?'Bauteil analysieren':'Mit Angaben weiter auswerten')),
+      ],
       if(busy)...[const SizedBox(height:12),const LinearProgressIndicator(),TextButton(onPressed:service?.cancel,child:const Text('Anfrage abbrechen'))],
       if(error!=null)Padding(padding:const EdgeInsets.symmetric(vertical:12),child:Text(error!,style:TextStyle(color:Theme.of(context).colorScheme.error))),
       if(plan!=null)...[
