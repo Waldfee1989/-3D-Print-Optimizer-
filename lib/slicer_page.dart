@@ -9,7 +9,7 @@ import 'local_slicer.dart';
 import 'studio_project.dart';
 import 'gcode_preview.dart';
 import 'project_optimizer.dart';
-import 'printer_send_page.dart';
+import 'cloud_send_page.dart';
 
 class SlicerPage extends StatefulWidget {
   const SlicerPage({super.key,required this.project,this.run});
@@ -72,7 +72,7 @@ class _SlicerPageState extends State<SlicerPage>{
         ]))),
         if(preview!=null)...[
           const SizedBox(height:16),
-          FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>PrinterSendPage(file:File(result!.path),projectName:p.name))),icon:const Icon(Icons.wifi),label:const Text('An Drucker senden')),
+          FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CloudSendPage(file:File(result!.path),projectName:p.name,material:p.recipe!.advice.material))),icon:const Icon(Icons.cloud_upload_outlined),label:const Text('An Drucker senden')),
           const SizedBox(height:20),
           if(preview.seconds!=null||preview.filamentMetres!=null)Card(child:Padding(padding:const EdgeInsets.all(16),child:Wrap(spacing:20,runSpacing:10,children:[
             if(preview.seconds!=null)Text('Druckzeit: ${(preview.seconds!/3600).floor()} h ${((preview.seconds!%3600)/60).ceil()} min'),
@@ -91,7 +91,7 @@ class _SlicerPageState extends State<SlicerPage>{
               const Text('Lokaler Slicer: CuraEngine 4.13.1'),
             ]))),
           ],
-          const SizedBox(height:12),const Text('Vor dem ersten Druck mit einem kleinen Testmodell beginnen. Über „An Drucker senden“ lässt sich die Datei per WLAN übertragen; der Druckstart erfolgt am Drucker.',style:TextStyle(fontSize:12)),
+          const SizedBox(height:12),const Text('Vor dem ersten Druck mit einem kleinen Testmodell beginnen. „An Drucker senden“ bietet Anycubic-Cloud für unterwegs und WLAN vor Ort. Ein Cloud-Upload und der spätere Druckauftrag werden getrennt bestätigt.',style:TextStyle(fontSize:12)),
         ],
       ]))));
   }
