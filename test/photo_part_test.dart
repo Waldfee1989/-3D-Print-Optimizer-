@@ -63,6 +63,23 @@ void main(){
     expect(()=>photoPartFromStl(Uint8List(90)),throwsFormatException);
     expect(()=>PhotoPartService(Uri.parse('http://insecure.example'),List.filled(32,'t').join()),throwsFormatException);
   });
+  testWidgets('Manual handoff keeps upload off and copies exact reference notes',(tester)async{
+    final photos=(await tester.runAsync(imagesFixture))!;
+    await tester.pumpWidget(MaterialApp(home:PhotoPartPage(restoreDraft:false,choose:(_,__)async=>photos.take(4).toList())));
+    await tester.pumpAndSettle();
+    expect(find.text('Fotos zur Online-Auswertung senden'),findsNothing);
+    await reveal(tester,find.text('Anfrage kopieren'));
+    expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton,'Anfrage kopieren')).onPressed,isNull);
+    await reveal(tester,find.text('Fotos laden'));await tester.tap(find.text('Fotos laden'));await tester.pumpAndSettle();
+    await reveal(tester,find.text('Bauteil und Maße eintragen'));await tester.tap(find.text('Bauteil und Maße eintragen'));await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField),'Zaun: mit Clips 157 mm; Zapfen 2,5 mm.');
+    await tester.tap(find.text('Speichern'));await tester.pumpAndSettle();
+    await reveal(tester,find.text('Anfrage kopieren'));await tester.tap(find.text('Anfrage kopieren'));await tester.pumpAndSettle();
+    final clipboard=await Clipboard.getData(Clipboard.kTextPlain);
+    expect(clipboard?.text,contains('Zaun: mit Clips 157 mm; Zapfen 2,5 mm.'));
+    expect(clipboard?.text,contains('4 Fotos'));expect(clipboard?.text,contains('Erfinde keine Maße'));
+    expect(find.text('Fotodienst verbinden'),findsNothing);expect(tester.takeException(),isNull);
+  });
   testWidgets('Photo workflow requires explicit upload, marks missing dimensions and generates only after reanalysis',(tester)async{
     tester.view.physicalSize=const Size(390,844);tester.view.devicePixelRatio=1;
     addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
