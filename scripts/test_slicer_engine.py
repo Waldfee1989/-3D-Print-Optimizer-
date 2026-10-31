@@ -28,6 +28,7 @@ with tempfile.TemporaryDirectory() as temp:
       'machine_max_acceleration_x':1000,'machine_max_acceleration_y':1000,'machine_max_acceleration_z':100,'machine_max_acceleration_e':1000,
       'machine_max_feedrate_x':150,'machine_max_feedrate_y':150,'machine_max_feedrate_z':10,'machine_max_feedrate_e':30,
       'machine_acceleration':1000,'acceleration_enabled':False,'jerk_enabled':False,'center_object':False,
+      'machine_center_is_zero':False,'mesh_position_x':-125,'mesh_position_y':-125,'mesh_position_z':0,
     }
     for key,value in settings.items():definition['settings'][key]={'default_value':value}
     config=root/'printer.json';config.write_text(json.dumps(definition))
@@ -37,6 +38,7 @@ with tempfile.TemporaryDirectory() as temp:
     if len(layers)<95 or len(layers)>105:raise AssertionError(f'Unexpected layers: {len(layers)}')
     if 'M104 S205' not in text or 'M140 S55' not in text or 'M104 S0' not in text:raise AssertionError('Temperatures missing')
     position={'X':0.,'Y':0.,'Z':0.,'E':0.};extruding=0
+    printed_min={'X':float('inf'),'Y':float('inf')};printed_max={'X':float('-inf'),'Y':float('-inf')}
     for line in text.splitlines():
         command=line.split(';',1)[0].strip()
         if not re.match(r'G(?:0|1|92)(?:\s|$)',command):continue
@@ -44,9 +46,18 @@ with tempfile.TemporaryDirectory() as temp:
         if command.startswith('G92'):position.update(values);continue
         if values.get('E',position['E'])>position['E']+1e-6 and ('X' in values or 'Y' in values):
             extruding+=1
+            for key in printed_min:
+                for coordinate in [position[key],values.get(key,position[key])]:
+                    printed_min[key]=min(printed_min[key],coordinate)
+                    printed_max[key]=max(printed_max[key],coordinate)
             for key,maximum in [('X',250),('Y',250),('Z',250)]:
                 value=values.get(key,position[key])
                 if not 0<=value<=maximum:raise AssertionError(f'Out-of-bed path: {command}')
         position.update(values)
     if extruding<300:raise AssertionError(f'No actual toolpaths: {extruding}')
+    for key in printed_min:
+        # The old test accepted a displaced cube at 225..245. Verify its real
+        # intended position, not merely whether it still fits somewhere.
+        if not 99.5<=printed_min[key]<=100.5 or not 119.5<=printed_max[key]<=120.5:
+            raise AssertionError(f'Placement changed on {key}: {printed_min[key]}..{printed_max[key]}')
     print(f'REAL_ENGINE_OK: {len(layers)} layers, {extruding} extrusion moves, {len(text)} G-code bytes')
