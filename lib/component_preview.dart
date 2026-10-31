@@ -9,7 +9,7 @@ import 'plate_geometry.dart';
 import 'mesh_renderer.dart';
 
 class ComponentPreview extends StatefulWidget {
-  const ComponentPreview({required this.part});
+  const ComponentPreview({super.key, required this.part});
   final PlatePart part;
   @override
   State<ComponentPreview> createState() => ComponentPreviewState();
