@@ -245,7 +245,7 @@ class _HomePageState extends State<HomePage> {
   }
   Future<void> openPartCreator()async{
     final choice=await showModalBottomSheet<int>(context:context,builder:(ctx)=>SafeArea(child:Column(mainAxisSize:MainAxisSize.min,children:[
-      ListTile(leading:const Icon(Icons.photo_camera_outlined),title:const Text('Aus 4–8 Fotos'),subtitle:const Text('Bauteil erkennen, Maße klären, STL erstellen'),onTap:()=>Navigator.pop(ctx,0)),
+      ListTile(leading:const Icon(Icons.photo_camera_outlined),title:const Text('Aus 4–8 Fotos'),subtitle:const Text('Fotos im Chat auswerten, STL importieren'),onTap:()=>Navigator.pop(ctx,0)),
       ListTile(leading:const Icon(Icons.design_services_outlined),title:const Text('Mit Maßvorlage'),subtitle:const Text('Runden Übergang direkt erstellen'),onTap:()=>Navigator.pop(ctx,1)),
       ListTile(leading:const Icon(Icons.straighten_outlined),title:const Text('Einzelnes Fotomaß'),subtitle:const Text('Sichtbare Strecke anhand einer Referenz schätzen'),onTap:()=>Navigator.pop(ctx,2)),
     ])));
