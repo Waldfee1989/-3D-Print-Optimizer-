@@ -30,6 +30,7 @@ import 'studio_project.dart';
 import 'adapter_page.dart';
 import 'adapter_request.dart';
 import 'photo_measure_page.dart';
+import 'photo_part_page.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -234,6 +235,24 @@ class _HomePageState extends State<HomePage> {
     await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:pickPlatePart,project:project,openSettings:true)));
   }
 
+  Future<void> openPhotoPart()async{
+    if(bed==null){await setup();if(!mounted||bed==null)return;}
+    final part=await Navigator.push<PlatePart>(context,MaterialPageRoute(builder:(_)=>const PhotoPartPage()));
+    if(part==null||!mounted)return;
+    final project=StudioProject(id:DateTime.now().microsecondsSinceEpoch.toString(),name:part.name,
+      printer:printer,slicer:slicer,nozzle:nozzle,bed:bed!,parts:[PlatePlacement(id:'0',part:part,x:bed!.width/2,y:bed!.depth/2)]);
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:pickPlatePart,project:project,openSettings:true)));
+  }
+  Future<void> openPartCreator()async{
+    final choice=await showModalBottomSheet<int>(context:context,builder:(ctx)=>SafeArea(child:Column(mainAxisSize:MainAxisSize.min,children:[
+      ListTile(leading:const Icon(Icons.photo_camera_outlined),title:const Text('Aus 4–8 Fotos'),subtitle:const Text('Fotos im Chat auswerten, STL importieren'),onTap:()=>Navigator.pop(ctx,0)),
+      ListTile(leading:const Icon(Icons.design_services_outlined),title:const Text('Mit Maßvorlage'),subtitle:const Text('Runden Übergang direkt erstellen'),onTap:()=>Navigator.pop(ctx,1)),
+      ListTile(leading:const Icon(Icons.straighten_outlined),title:const Text('Einzelnes Fotomaß'),subtitle:const Text('Sichtbare Strecke anhand einer Referenz schätzen'),onTap:()=>Navigator.pop(ctx,2)),
+    ])));
+    if(!mounted)return;
+    if(choice==0)await openPhotoPart();else if(choice==1)await openAdapter();else if(choice==2)await openPhoto();
+  }
+
   Future<void> openPhoto()async{
     final draft=await Navigator.push<AdapterDraft>(context,MaterialPageRoute(builder:(_)=>const PhotoMeasurePage()));
     if(draft!=null&&mounted)await openAdapter(initialDraft:draft);
@@ -258,8 +277,8 @@ class _HomePageState extends State<HomePage> {
           StudioHero(onOpen:openModel),
           const SizedBox(height:10),
           Row(children:[
-            Expanded(child:OutlinedButton.icon(onPressed:()=>openAdapter(),icon:const Icon(Icons.mic_none),label:const Text('Bauteil erstellen',textAlign:TextAlign.center))),
-            const SizedBox(width:10),Expanded(child:OutlinedButton.icon(onPressed:openPhoto,icon:const Icon(Icons.photo_size_select_large_outlined),label:const Text('Fotomaße'))),
+            Expanded(child:OutlinedButton.icon(onPressed:openPartCreator,icon:const Icon(Icons.auto_awesome_outlined),label:const Text('Bauteil erstellen',textAlign:TextAlign.center))),
+            const SizedBox(width:10),Expanded(child:OutlinedButton.icon(onPressed:openPhotoPart,icon:const Icon(Icons.photo_camera_outlined),label:const Text('Fotos zu STL'))),
           ]),
           const StudioHeading('Deine Werkzeuge',subtitle:'Vorbereiten, organisieren, loslegen.'),
           StudioTools(children:[
