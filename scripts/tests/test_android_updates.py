@@ -33,6 +33,7 @@ class MainActivity : FlutterActivity()
         permissions = {p.get(android + "name") for p in root.findall("uses-permission")}
         self.assertEqual(permissions, {"android.permission.INTERNET", "android.permission.REQUEST_INSTALL_PACKAGES"})
         app = root.find("application")
+        self.assertEqual(app.get(android + "usesCleartextTraffic"), "true")
         self.assertEqual(app.get(android + "label"), "Optimizer")
         self.assertIsNotNone(app.find("activity"))
         provider = app.find("provider")
