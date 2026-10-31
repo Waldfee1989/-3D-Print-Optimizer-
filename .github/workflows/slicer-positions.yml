@@ -1,0 +1,28 @@
+name: Slicer-Positionen pruefen
+on:
+  push:
+    branches: [slicer-bounds-diagnostics]
+  pull_request:
+    branches: [main]
+    paths: ['lib/local_slicer.dart', 'lib/plate_geometry.dart', 'test/slicer_coordinates_test.dart', 'scripts/test_slicer_positions.py', 'scripts/test_slicer_engine.py', '.github/workflows/slicer-positions.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  positions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/local_slicer.dart test/slicer_coordinates_test.dart
+      - run: flutter test test/slicer_coordinates_test.dart test/gcode_preview_test.dart test/studio_project_test.dart --reporter expanded
+        env:
+          SLICER_FIXTURE_DIR: build/coordinate-fixtures
+      - run: python3 scripts/build_slicer_engine.py --output build/slicer-host
+      - run: python3 scripts/test_slicer_engine.py build/slicer-host/optimizer_slicer
+      - run: python3 scripts/test_slicer_positions.py build/slicer-host/optimizer_slicer build/coordinate-fixtures

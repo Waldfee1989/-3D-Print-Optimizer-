@@ -34,6 +34,10 @@ Map<String,dynamic> localSlicerSettings((StudioProject,String) input){
   final overrides=<String,Object>{
     'machine_width':p.bed.width,'machine_depth':p.bed.depth,'machine_height':p.bed.height,
     'machine_center_is_zero':false,'center_object':false,'machine_extruder_count':1,'extruder_nr':0,
+    // encodePlateStl already exports absolute bed coordinates. CuraEngine 4.13
+    // adds half the bed size in MeshGroup::finalize for a corner-origin bed;
+    // cancel only that import offset, retaining the printer's real origin.
+    'mesh_position_x':-p.bed.width/2,'mesh_position_y':-p.bed.depth/2,'mesh_position_z':0,
     'machine_nozzle_size':.4,'material_diameter':1.75,'machine_gcode_flavor':'RepRap (Marlin/Sprinter)',
     'machine_heated_bed':true,'machine_heated_build_volume':false,'machine_extruder_cooling_fan_number':1,
     // Official Kobra S1 startup macro; the firmware performs its normal startup.
