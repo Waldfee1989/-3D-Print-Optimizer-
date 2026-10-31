@@ -21,6 +21,11 @@ class ComponentBuilderPage extends StatefulWidget {
 class _ComponentBuilderPageState extends State<ComponentBuilderPage> {
   final dimensions = List.generate(3, (_) => TextEditingController());
   final points = <Offset>[];
+  final scroll = ScrollController();
+  void fail(String message) {
+    setState(() => error = message);
+    if (scroll.hasClients) scroll.animateTo(0, duration: const Duration(milliseconds: 150), curve: Curves.easeOut);
+  }
   PlatePart? created;
   String? error;
   bool busy = false;
@@ -46,10 +51,7 @@ class _ComponentBuilderPageState extends State<ComponentBuilderPage> {
   Future<void> create() async {
     final values = dimensions.map((c) => parse(c.text)).toList();
     if (values.any((v) => v == null)) {
-      setState(
-        () => error =
-            'Bitte Breite, Länge und Höhe angeben. Auch cm sind möglich.',
-      );
+      fail('Bitte Breite, Länge und Höhe angeben. Auch cm sind möglich.');
       return;
     }
     final spec = ComponentSpec(
@@ -61,7 +63,7 @@ class _ComponentBuilderPageState extends State<ComponentBuilderPage> {
     );
     final invalid = spec.validate();
     if (invalid != null) {
-      setState(() => error = invalid);
+      fail(invalid);
       return;
     }
     final request = revision;
@@ -86,6 +88,7 @@ class _ComponentBuilderPageState extends State<ComponentBuilderPage> {
 
   @override
   void dispose() {
+    scroll.dispose();
     for (final c in dimensions) c.dispose();
     super.dispose();
   }
@@ -108,10 +111,19 @@ class _ComponentBuilderPageState extends State<ComponentBuilderPage> {
     body: SafeArea(
       top: false,
       child: ListView(
+        controller: scroll,
         padding: const EdgeInsets.all(20),
         children: [
           widget.chooser,
           const SizedBox(height: 20),
+          if (error != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: Text(
+                error!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
           StudioHeading(
             free ? 'Zeichne deine Bauteilkontur.' : 'Maße für dein Bauteil.',
             subtitle: switch (widget.shape) {
@@ -126,8 +138,8 @@ class _ComponentBuilderPageState extends State<ComponentBuilderPage> {
               'Eckpunkte der Reihe nach antippen. Der letzte Punkt wird mit dem ersten verbunden. Die Zeichnung ist eine Draufsicht; Breite und Länge unten bestimmen die tatsächliche Größe.',
             ),
             const SizedBox(height: 12),
-            AspectRatio(
-              aspectRatio: 1,
+            SizedBox(
+              height: 280,
               child: LayoutBuilder(
                 builder: (context, c) => GestureDetector(
                   key: const ValueKey('contour-canvas'),
@@ -217,14 +229,6 @@ class _ComponentBuilderPageState extends State<ComponentBuilderPage> {
               ),
             ),
           if (busy) const LinearProgressIndicator(),
-          if (error != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 16),
-              child: Text(
-                error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
           if (created != null) ...[
             ComponentPreview(key: ObjectKey(created), part: created!),
             const SizedBox(height: 12),

@@ -4,6 +4,7 @@ import 'package:print_optimizer/adapter_page.dart';
 import 'package:print_optimizer/component_geometry.dart';
 import 'package:print_optimizer/component_page.dart';
 import 'package:print_optimizer/plate_geometry.dart';
+import 'scroll_helpers.dart';
 
 void main() {
   testWidgets(
@@ -60,7 +61,7 @@ void main() {
       expect(find.textContaining('Bitte Breite'), findsOneWidget);
       Future<void> edit(int i, String value) async {
         final field = find.byKey(ValueKey('component-dimension-$i'));
-        await tester.ensureVisible(field);
+        await reveal(tester, field);
         await tester.enterText(field, value);
         await tester.pumpAndSettle();
       }
@@ -107,10 +108,10 @@ void main() {
       ),
     );
     final canvas = find.byKey(const ValueKey('contour-canvas'));
-    await tester.ensureVisible(canvas);
+    await reveal(tester, canvas);
     await tester.tap(canvas);
     await tester.pump();
-    await tester.ensureVisible(find.text('Letzten Punkt entfernen'));
+    await reveal(tester, find.text('Letzten Punkt entfernen'));
     await tester.tap(find.text('Letzten Punkt entfernen'));
     await tester.pump();
     expect(
