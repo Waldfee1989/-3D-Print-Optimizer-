@@ -1,0 +1,24 @@
+name: Anycubic-Cloud pruefen
+on:
+  push:
+    branches: [anycubic-cloud-send]
+  pull_request:
+    branches: [main]
+    paths: ['lib/anycubic_cloud.dart', 'lib/cloud_login_page.dart', 'lib/cloud_send_page.dart', 'lib/slicer_page.dart', 'test/anycubic_cloud_test.dart', 'test/cloud_send_page_test.dart', '.github/workflows/cloud-send.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cloud-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/anycubic_cloud.dart lib/cloud_login_page.dart lib/cloud_send_page.dart lib/slicer_page.dart test/anycubic_cloud_test.dart test/cloud_send_page_test.dart
+      - run: flutter test test/anycubic_cloud_test.dart test/cloud_send_page_test.dart test/kobra_lan_test.dart test/printer_send_page_test.dart test/gcode_preview_test.dart --reporter expanded
+      - run: python3 -m unittest discover -s scripts/tests -v
