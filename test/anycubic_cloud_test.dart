@@ -33,7 +33,8 @@ void main() {
   late AnycubicCloudClient client;
   final requests = <String>[], bodies = <String, dynamic>{};
   final bytes = utf8.encode('; synthetic test only\nG90\nG1 X10 Y20\n');
-  var online = 1, printing = 2, storageStatus = 200, apiCode = 200;
+  var online = 1, printing = 2, storageStatus = 200;
+  Object? apiCode = 1;
   bool hostileStorage = false, failClaim = false, failOrder = false, authExpired = false;
   List<int>? received;
   List<String>? storageHeaders;
@@ -43,7 +44,7 @@ void main() {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     client = AnycubicCloudClient.test(token, server.port);
     requests.clear(); bodies.clear(); received = null; storageHeaders = null;
-    online = 1; printing = 2; storageStatus = 200; apiCode = 200;
+    online = 1; printing = 2; storageStatus = 200; apiCode = 1;
     hostileStorage = false; failClaim = false; failOrder = false; authExpired = false;
     server.listen((request) async {
       try {
@@ -81,6 +82,30 @@ void main() {
     });
   });
   tearDown(() async { client.logout(); await server.close(force: true); await directory.delete(recursive: true); });
+  test('REST success codes include the official web code 1 and numeric strings', () async {
+    for (final code in [1, '1', 0, 200]) {
+      apiCode = code;
+      expect((await client.listPrinters()).single.id, 41);
+    }
+    expect(requests.any((r) => r.contains('sendOrder')), false);
+  });
+  test('Rejected list reports only the stage and safe code, not secrets or an empty account', () async {
+    apiCode = 500;
+    try { await client.listPrinters(); fail('Should reject'); } on FormatException catch (e) {
+      expect(e.message, contains('Druckerliste'));
+      expect(e.message, contains('Cloud-Code 500'));
+      expect(e.message, isNot(contains('DO_NOT_SHOW')));
+      expect(e.message, isNot(contains('Dateiformat')));
+    }
+  });
+  test('REST expired-session code blocks further requests, even with data present', () async {
+    apiCode = 10001;
+    await expectLater(client.listPrinters(), throwsFormatException);
+    final count = requests.length;
+    apiCode = 1;
+    await expectLater(client.listPrinters(), throwsFormatException);
+    expect(requests.length, count);
+  });
   test('Cloud upload streams unchanged bytes, registers the file and sends no print order', () async {
     await client.listPrinters();
     final progress = <int>[];

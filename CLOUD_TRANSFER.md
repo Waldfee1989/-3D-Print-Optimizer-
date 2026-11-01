@@ -74,3 +74,16 @@ V1.3.863 nicht am Gerät geprüft. Die Oberfläche kennzeichnet dies als Testver
 Die nicht offiziell dokumentierte API kann sich ändern oder Web-Sitzungen für
 einzelne Operationen ablehnen. Vor einer Funktionsfreigabe müssen diese Schritte
 mit dem eigenen Konto geprüft werden; Simulationen sind kein Live-Nachweis.
+
+## REST-Antwortkorrektur (1. November 2026)
+Die aktuell öffentlich ausgelieferte offizielle Web-App
+`https://cloud-universe.anycubic.com/js/app.982cbff9.js` prüft REST-Erfolg
+mit `code === 1` und behandelt `10001` als abgelaufene Anmeldung.
+Der bisherige Client hatte REST- und Druckernachrichten-Codes verwechselt.
+Er akzeptiert jetzt gezielt 1 sowie die kompatiblen 0/200; unbekannte Codes
+und fehlende Daten bleiben Fehler. Servermeldungen werden nicht angezeigt,
+nur der begrenzte numerische Code und der fehlgeschlagene Schritt.
+Eine fehlgeschlagene Druckerabfrage gilt nicht mehr als leeres Konto.
+Die Regressionstests laufen standardmäßig mit REST-Code 1; Upload,
+Druckfreigabe und Wiederholschutz bleiben darin separat geprüft.
+Dies ist noch kein Test mit einem echten Konto oder Drucker.
