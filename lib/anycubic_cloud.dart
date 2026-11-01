@@ -194,7 +194,7 @@ class AnycubicCloudClient {
   Future<CloudFile> upload(File file, String filename, {void Function(int, int)? progress}) => _operation(() async {
     if (!RegExp(r'^[A-Za-z0-9_-]{1,100}\.gcode$').hasMatch(filename)) throw const FormatException('Ungültiger Druckdateiname.');
     final total = await file.length();
-    if (total < 16 || total > 128 * 1024 * 1024) throw const FormatException('Die Cloud-Druckdatei muss zwischen 16 Byte und 128 MB groß sein.');
+    if (total < 16 || total > 500000000) throw const FormatException('Die Cloud-Druckdatei muss zwischen 16 Byte und 500 MB groß sein.');
     final lock = await _api('/v2/cloud_storage/lockStorageSpace', data: {'size': total, 'name': filename, 'is_temp_file': 0});
     if (lock is! Map || _integer(lock['id']) <= 0 || lock['preSignUrl'] is! String) throw const FormatException('Die Cloud hat keinen Upload reserviert.');
     final lockId = _integer(lock['id']);

@@ -36,6 +36,7 @@ void main() {
   var online = 1, printing = 2, storageStatus = 200;
   Object? apiCode = 1;
   bool hostileStorage = false, failClaim = false, failOrder = false, authExpired = false;
+  var expectedUploadBytes = 0;
   List<int>? received;
   List<String>? storageHeaders;
   setUp(() async {
@@ -45,6 +46,7 @@ void main() {
     client = AnycubicCloudClient.test(token, server.port);
     requests.clear(); bodies.clear(); received = null; storageHeaders = null;
     online = 1; printing = 2; storageStatus = 200; apiCode = 1;
+    expectedUploadBytes = bytes.length;
     hostileStorage = false; failClaim = false; failOrder = false; authExpired = false;
     server.listen((request) async {
       try {
@@ -70,7 +72,7 @@ void main() {
         if (path.endsWith('/getPrinters')) { response = [printerData(online: online, printing: printing)];
         } else if (path.endsWith('/printer/info')) { expect(request.uri.queryParameters['id'], '41'); response = printerData(online: online, printing: printing);
         } else if (path.endsWith('/lockStorageSpace')) {
-          expect(body['size'], bytes.length); expect(body['name'], 'test.gcode'); expect(body['is_temp_file'], 0);
+          expect(body['size'], expectedUploadBytes); expect(body['name'], 'test.gcode'); expect(body['is_temp_file'], 0);
           response = {'id': 101, 'preSignUrl': hostileStorage ? 'https://evil.test/steal' : 'http://127.0.0.1:${server.port}/storage?signature=synthetic'};
         } else if (path.endsWith('/newUploadFile')) { expect(body['user_lock_space_id'], 101); response = {'id': 202}; if (failClaim) code = 500;
         } else if (path.endsWith('/unlockStorageSpace')) { expect(body['id'], 101); response = '';
@@ -151,6 +153,21 @@ void main() {
     await expectLater(client.upload(file, 'test.gcode'), throwsFormatException);
     expect(received, isNull); expect(requests.any((r) => r.contains('newUploadFile')), false);
     expect(bodies['$cloudApiPath/v2/cloud_storage/unlockStorageSpace']['is_delete_cos'], 1);
+  });
+  test('Files above 128 MiB reach cloud reservation; files above 500 MB are refused before network', () async {
+    final handle = await file.open(mode: FileMode.write);
+    await handle.truncate(129 * 1024 * 1024); await handle.close();
+    expectedUploadBytes = await file.length(); hostileStorage = true;
+    try { await client.upload(file, 'test.gcode'); fail('Should refuse untrusted destination'); } on FormatException catch (e) {
+      expect(e.message, contains('Speicherziel'));
+    }
+    expect(requests.any((r) => r.contains('lockStorageSpace')), true);
+    expect(received, isNull);
+    requests.clear();
+    final large = await file.open(mode: FileMode.write);
+    await large.truncate(500000001); await large.close();
+    await expectLater(client.upload(file, 'test.gcode'), throwsFormatException);
+    expect(requests, isEmpty);
   });
   test('Failed PUT cannot be reported as a cloud file', () async {
     storageStatus = 500;
