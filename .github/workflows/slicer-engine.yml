@@ -1,5 +1,7 @@
 name: Slicer-Engine pruefen
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [integrated-slicer]
     paths: ['scripts/build_slicer_engine.py','scripts/test_slicer_engine.py','assets/slicer/**','.github/workflows/slicer-engine.yml']
