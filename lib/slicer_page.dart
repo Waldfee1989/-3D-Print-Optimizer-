@@ -20,7 +20,7 @@ class SlicerPage extends StatefulWidget {
 class _SlicerPageState extends State<SlicerPage>{
   final engine=LocalSlicer();
   LocalSliceResult? result;
-  bool busy=true,leaving=false;String? error;
+  bool busy=true,leaving=false,exporting=false;String? error;
   @override void initState(){super.initState();start();}
   Future<void> start()async{
     setState((){busy=true;error=null;});
@@ -31,20 +31,27 @@ class _SlicerPageState extends State<SlicerPage>{
     }catch(e){if(mounted)setState((){busy=false;error=e is FormatException?e.message:e is PlatformException?e.message:'Slicing fehlgeschlagen. Modell und Einstellungen prüfen.';});}
   }
   Future<void> leave()async{
-    if(leaving)return;
+    if(leaving||exporting)return;
     setState(()=>leaving=true);
     if(busy){try{await engine.cancel();}catch(_){}}
     if(mounted){await WidgetsBinding.instance.endOfFrame;if(mounted)Navigator.pop(context);}
   }
   Future<void> export()async{
-    final output=result;if(output==null)return;
+    final output=result;if(output==null||exporting)return;
+    setState(()=>exporting=true);
     try{
-      final bytes=await File(output.path).readAsBytes();
       final name=widget.project.name.replaceAll(RegExp(r'[^a-zA-Z0-9._-]'),'_');
-      final target=await FilePicker.platform.saveFile(dialogTitle:'G-Code speichern',fileName:'$name.gcode',type:FileType.custom,allowedExtensions:['gcode'],bytes:bytes);
-      if(target!=null&&(Platform.isWindows||Platform.isLinux||Platform.isMacOS))await File(target).writeAsBytes(bytes,flush:true);
-      if(target!=null&&mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('G-Code gespeichert.')));
-    }catch(_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('G-Code konnte nicht gespeichert werden.')));}
+      bool saved;
+      if(Platform.isAndroid){
+        saved=await slicerChannel.invokeMethod<bool>('export',{'path':output.path,'name':'$name.gcode'})??false;
+      }else{
+        final target=await FilePicker.platform.saveFile(dialogTitle:'G-Code speichern',fileName:'$name.gcode',type:FileType.custom,allowedExtensions:['gcode']);
+        saved=target!=null;
+        if(target!=null)await File(output.path).copy(target);
+      }
+      if(saved&&mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('G-Code gespeichert.')));
+    }catch(_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('G-Code konnte nicht gespeichert werden. Speicherplatz prüfen.')));}
+    finally{if(mounted)setState(()=>exporting=false);}
   }
   Future<void> sources()async{
     final info=await PackageInfo.fromPlatform();
@@ -54,9 +61,9 @@ class _SlicerPageState extends State<SlicerPage>{
   @override void dispose(){if(busy)engine.cancel().catchError((_){ });final directory=result?.directory;if(directory!=null)directory.delete(recursive:true).catchError((_)=>directory);super.dispose();}
   @override Widget build(BuildContext context){
     final preview=result?.preview,p=widget.project,recipe=p.recipe;
-    return PopScope(canPop:!busy||leaving,onPopInvokedWithResult:(didPop,result){if(!didPop)leave();},child:Scaffold(
-      appBar:AppBar(title:Text(busy?'Slicer':'Schichtvorschau'),leading:IconButton(tooltip:busy?'Berechnung abbrechen':'Zurück',onPressed:leave,icon:const Icon(Icons.arrow_back)),actions:[
-        TextButton.icon(onPressed:result==null?null:export,icon:const Icon(Icons.save_alt,size:19),label:const Text('G-Code')),
+    return PopScope(canPop:(!busy&&!exporting)||leaving,onPopInvokedWithResult:(didPop,result){if(!didPop)leave();},child:Scaffold(
+      appBar:AppBar(title:Text(busy?'Slicer':'Schichtvorschau'),leading:IconButton(tooltip:busy?'Berechnung abbrechen':'Zurück',onPressed:exporting?null:leave,icon:const Icon(Icons.arrow_back)),actions:[
+        TextButton.icon(onPressed:result==null||exporting?null:export,icon:const Icon(Icons.save_alt,size:19),label:Text(exporting?'Speichern …':'G-Code')),
         PopupMenuButton<String>(tooltip:'Slicer-Informationen',onSelected:(v){if(v=='source'){sources();}else{showLicensePage(context:context);}},itemBuilder:(_)=>const[
           PopupMenuItem(value:'source',child:Text('Slicer-Quellcode herunterladen')),PopupMenuItem(value:'license',child:Text('Open-Source-Lizenzen')),
         ]),
@@ -72,7 +79,7 @@ class _SlicerPageState extends State<SlicerPage>{
         ]))),
         if(preview!=null)...[
           const SizedBox(height:16),
-          FilledButton.icon(onPressed:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CloudSendPage(file:File(result!.path),projectName:p.name,material:p.recipe!.advice.material))),icon:const Icon(Icons.cloud_upload_outlined),label:const Text('An Drucker senden')),
+          FilledButton.icon(onPressed:exporting?null:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>CloudSendPage(file:File(result!.path),projectName:p.name,material:p.recipe!.advice.material))),icon:const Icon(Icons.cloud_upload_outlined),label:const Text('An Drucker senden')),
           const SizedBox(height:20),
           if(preview.seconds!=null||preview.filamentMetres!=null)Card(child:Padding(padding:const EdgeInsets.all(16),child:Wrap(spacing:20,runSpacing:10,children:[
             if(preview.seconds!=null)Text('Druckzeit: ${(preview.seconds!/3600).floor()} h ${((preview.seconds!%3600)/60).ceil()} min'),

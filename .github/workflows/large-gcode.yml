@@ -1,0 +1,22 @@
+name: Grosse G-Code-Dateien pruefen
+on:
+  pull_request:
+    branches: [main]
+    paths: ['lib/gcode_preview.dart', 'lib/slicer_page.dart', 'lib/anycubic_cloud.dart', 'test/large_gcode_test.dart', 'scripts/android_slicer/**', 'scripts/configure_android_slicer.py', 'scripts/tests/test_android_slicer_export.py', '.github/workflows/large-gcode.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  large-files:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/gcode_preview.dart lib/local_slicer.dart lib/slicer_page.dart lib/anycubic_cloud.dart test/large_gcode_test.dart
+      - run: flutter test test/large_gcode_test.dart test/gcode_preview_test.dart test/slicer_coordinates_test.dart test/slicer_export_test.dart test/anycubic_cloud_test.dart test/cloud_send_page_test.dart test/kobra_lan_test.dart test/printer_send_page_test.dart --reporter expanded
+      - run: python3 -m unittest discover -s scripts/tests -v
