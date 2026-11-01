@@ -26,7 +26,7 @@ class _CloudSendPageState extends State<CloudSendPage> {
   CloudPrinter? printer;
   CloudFile? uploaded;
   int? slotIndex;
-  bool busy = false, external = false;
+  bool busy = false, external = false, printersLoaded = false;
   double? progress;
   String? error, accepted;
   @override void initState() {
@@ -44,14 +44,14 @@ class _CloudSendPageState extends State<CloudSendPage> {
     if (result == null || !mounted) return;
     client?.logout(); CloudConnection.client = null;
     setState(() { client = widget.makeClient?.call(result) ?? AnycubicCloudClient(result.token, userAgent: result.userAgent);
-      printers = []; printer = null; uploaded = null; accepted = null; slotIndex = null; external = false; });
+      printers = []; printersLoaded = false; printer = null; uploaded = null; accepted = null; slotIndex = null; external = false; });
     await reload();
     if (error == null) CloudConnection.client = client;
   }
   Future<void> reload() async {
     if (busy || client == null) return;
-    setState(() { busy = true; error = null; printer = null; slotIndex = null; external = false; });
-    try { final value = await client!.listPrinters(); if (mounted) setState(() => printers = value);
+    setState(() { busy = true; error = null; printers = []; printersLoaded = false; printer = null; slotIndex = null; external = false; });
+    try { final value = await client!.listPrinters(); if (mounted) setState(() { printers = value; printersLoaded = true; });
     } catch (e) { failure(e);
     } finally { if (mounted) setState(() => busy = false); }
   }
@@ -99,7 +99,7 @@ class _CloudSendPageState extends State<CloudSendPage> {
   Future<void> logout() async {
     if (busy) return;
     client?.logout(); CloudConnection.client = null;
-    setState(() { client = null; printer = null; printers = []; uploaded = null; accepted = null; error = null; });
+    setState(() { client = null; printer = null; printers = []; printersLoaded = false; uploaded = null; accepted = null; error = null; });
     if (widget.signIn == null && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS)) {
       try { await WebViewCookieManager().clearCookies(); await WebViewController().clearLocalStorage(); } catch (_) {}
     }
@@ -123,7 +123,7 @@ class _CloudSendPageState extends State<CloudSendPage> {
         if (client != null) ...[
           TextButton(onPressed: busy ? null : logout, child: const Text('Konto trennen und Anmeldung löschen')),
           OutlinedButton.icon(onPressed: busy ? null : reload, icon: const Icon(Icons.refresh), label: const Text('Druckerliste laden')),
-          if (printers.isEmpty && !busy) const Text('Kein unterstützter Kobra S1 im verbundenen Konto gefunden.'),
+          if (printersLoaded && printers.isEmpty && !busy) const Text('Kein unterstützter Kobra S1 im verbundenen Konto gefunden.'),
           if (printers.isNotEmpty) DropdownButtonFormField<int>(key: ValueKey(printer?.id), initialValue: printer?.id,
             decoration: const InputDecoration(labelText: 'Dein Drucker'), isExpanded: true,
             items: [for (final p in printers) DropdownMenuItem(value: p.id, child: Text(p.name, overflow: TextOverflow.ellipsis))],

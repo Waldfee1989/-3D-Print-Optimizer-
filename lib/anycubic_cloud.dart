@@ -152,8 +152,18 @@ class AnycubicCloudClient {
       if (response.statusCode != 200) throw FormatException('Anycubic-Cloud antwortet mit HTTP ${response.statusCode}.');
       dynamic value;
       try { value = jsonDecode(utf8.decode(bytes)); } catch (_) { throw const FormatException('Keine gültige Cloud-Bestätigung erhalten.'); }
-      if (value is! Map || ![0, 200].contains(value['code']) || !value.containsKey('data') || value['data'] == null) {
-        throw const FormatException('Die Anycubic-Cloud hat die Anfrage nicht bestätigt. Konto, Berechtigungen oder Dateiformat prüfen.');
+      final code = value is Map ? _integer(value['code']) : -1;
+      // The deployed official web client uses code 1 for REST success.
+      // 0/200 remain accepted for compatible API versions, not arbitrary codes.
+      if (code == 10001) {
+        _token = null;
+        throw const FormatException('Die Cloud-Anmeldung ist abgelaufen (Cloud-Code 10001). Bitte bei Anycubic erneut anmelden.');
+      }
+      if (value is! Map || ![0, 1, 200].contains(code) || !value.containsKey('data') || value['data'] == null) {
+        final action = path.endsWith('/getPrinters') ? 'Die Druckerliste' : path.endsWith('/printer/info') ? 'Der Druckerstatus' : 'Die Cloud-Anfrage';
+        final detail = code >= 0 && code <= 999999999 ? ' (Cloud-Code $code)' : '';
+        // Never show server messages: they can contain account/session data.
+        throw FormatException('$action konnte nicht bestätigt werden$detail. Bitte die Anmeldung und Cloud-Verbindung prüfen.');
       }
       return value['data'];
     } finally { client.close(force: true); _clients.remove(client); }
