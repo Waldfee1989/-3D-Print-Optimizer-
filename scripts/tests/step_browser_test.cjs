@@ -6,6 +6,8 @@ const root=path.resolve(__dirname,'../..');
  const browser=await chromium.launch({headless:true,executablePath:process.env.STEP_CHROME||'/usr/bin/google-chrome',args:['--no-sandbox']});
  try{
   const page=await browser.newPage(),network=[];
+  page.on('console',message=>{if(message.type()==='error')console.error('Local browser:',message.text());});
+  page.on('pageerror',error=>console.error('Local page:',error.message));
   page.on('request',request=>{if(/^https?:/.test(request.url()))network.push(request.url());});
   const file=fs.readFileSync(process.argv[2]||path.join(root,'build/step-importer/fixtures/simple-basic-cube/cube.stp'));
   let resolve,reject;const done=new Promise((r,j)=>{resolve=r;reject=j;});const chunks=[];let received=0,expected=0,acks=0;
