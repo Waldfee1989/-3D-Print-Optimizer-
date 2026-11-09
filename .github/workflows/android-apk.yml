@@ -108,6 +108,9 @@ jobs:
           p.write_text(s)
           PY
 
+      - name: Offline STEP-Importer und Quellen vorbereiten
+        run: python3 scripts/prepare_step_importer.py --sources
+
       - name: Abhaengigkeiten installieren
         run: flutter pub get
 
@@ -173,6 +176,7 @@ jobs:
           path: |
             build/app/outputs/flutter-apk/app-release.apk
             build/slicer-android/CuraEngine-source.zip
+            build/step-importer/STEP-importer-source.zip
 
       - name: APK als Release veroeffentlichen
         if: github.ref == 'refs/heads/main'
@@ -183,6 +187,7 @@ jobs:
           files: |
             build/app/outputs/flutter-apk/app-release.apk
             build/slicer-android/CuraEngine-source.zip
+            build/step-importer/STEP-importer-source.zip
 
       - name: Temporaere Signaturdateien entfernen
         if: always()
