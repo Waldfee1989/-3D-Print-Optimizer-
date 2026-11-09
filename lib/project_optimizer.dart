@@ -350,7 +350,7 @@ class _PrintProjectsPageState extends State<PrintProjectsPage> {
         onPressed: () => setState(() => projects = loadPrintProjects()),
         child: const Text('Projekte konnten nicht geladen werden. Erneut versuchen')));
       if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-      if (snapshot.data!.isEmpty) return const Center(child: Text('Noch keine Projekte. Öffne zuerst eine STL- oder 3MF-Datei.'));
+      if (snapshot.data!.isEmpty) return const Center(child: Text('Noch keine Projekte. Öffne zuerst eine STL-, 3MF- oder STEP-Datei.'));
       return ListView(children: [for (final p in snapshot.data!) ListTile(
         title: Text(p.fileName), subtitle: Text('${p.advice.material} · ${p.surface}'),
         trailing: const Icon(Icons.chevron_right), onTap: () async {

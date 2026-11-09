@@ -27,7 +27,7 @@ void main(){
       addTearDown(tester.view.resetPhysicalSize);addTearDown(tester.view.resetDevicePixelRatio);
       final boundary=GlobalKey();
       await tester.pumpWidget(RepaintBoundary(key:boundary,child:const OptimizerApp()));await tester.pumpAndSettle();
-      expect(find.text('STL / 3MF öffnen'),findsOneWidget);expect(find.text('Deine Werkzeuge'),findsOneWidget);
+      expect(find.text('STL / 3MF / STEP öffnen'),findsOneWidget);expect(find.text('Deine Werkzeuge'),findsOneWidget);
       expect(tester.takeException(),isNull);
       if(size.width==390){
         await tester.runAsync(()async{

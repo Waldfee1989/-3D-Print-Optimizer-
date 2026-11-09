@@ -1,0 +1,28 @@
+name: STEP-Import pruefen
+on:
+  pull_request:
+    branches: [main]
+    paths: ['lib/step_import.dart', 'lib/main.dart', 'lib/slicer_page.dart', 'assets/step/**', 'scripts/prepare_step_importer.py', 'scripts/tests/step*', 'test/step_import_test.dart', 'pubspec.yaml', '.github/workflows/step-import.yml', '.github/workflows/android-apk.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  step-import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/prepare_step_importer.py
+      - run: node scripts/tests/step_engine_test.cjs
+      - run: npm install --ignore-scripts --prefix /tmp/step-browser playwright-core@1.58.2
+      - run: node scripts/tests/step_browser_test.cjs
+        env:
+          STEP_PLAYWRIGHT: /tmp/step-browser/node_modules/playwright-core
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/main.dart lib/step_import.dart lib/slicer_page.dart test/step_import_test.dart
+      - run: flutter test test/step_import_test.dart test/print_geometry_test.dart test/build_plate_test.dart test/model_3mf_test.dart test/compact_settings_test.dart test/studio_design_test.dart --reporter expanded
+      - run: python3 -m unittest discover -s scripts/tests -v

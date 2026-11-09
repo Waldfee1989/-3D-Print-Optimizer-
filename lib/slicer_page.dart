@@ -53,9 +53,10 @@ class _SlicerPageState extends State<SlicerPage>{
     }catch(_){if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('G-Code konnte nicht gespeichert werden. Speicherplatz prüfen.')));}
     finally{if(mounted)setState(()=>exporting=false);}
   }
-  Future<void> sources()async{
+  Future<void> sources({bool step=false})async{
     final info=await PackageInfo.fromPlatform();
-    final url=Uri.parse('https://github.com/Waldfee1989/-3D-Print-Optimizer-/releases/download/build-${info.buildNumber}/CuraEngine-source.zip');
+    final file=step?'STEP-importer-source.zip':'CuraEngine-source.zip';
+    final url=Uri.parse('https://github.com/Waldfee1989/-3D-Print-Optimizer-/releases/download/build-${info.buildNumber}/$file');
     await launchUrl(url,mode:LaunchMode.externalApplication);
   }
   @override void dispose(){if(busy)engine.cancel().catchError((_){ });final directory=result?.directory;if(directory!=null)directory.delete(recursive:true).catchError((_)=>directory);super.dispose();}
@@ -64,8 +65,8 @@ class _SlicerPageState extends State<SlicerPage>{
     return PopScope(canPop:(!busy&&!exporting)||leaving,onPopInvokedWithResult:(didPop,result){if(!didPop)leave();},child:Scaffold(
       appBar:AppBar(title:Text(busy?'Slicer':'Schichtvorschau'),leading:IconButton(tooltip:busy?'Berechnung abbrechen':'Zurück',onPressed:exporting?null:leave,icon:const Icon(Icons.arrow_back)),actions:[
         TextButton.icon(onPressed:result==null||exporting?null:export,icon:const Icon(Icons.save_alt,size:19),label:Text(exporting?'Speichern …':'G-Code')),
-        PopupMenuButton<String>(tooltip:'Slicer-Informationen',onSelected:(v){if(v=='source'){sources();}else{showLicensePage(context:context);}},itemBuilder:(_)=>const[
-          PopupMenuItem(value:'source',child:Text('Slicer-Quellcode herunterladen')),PopupMenuItem(value:'license',child:Text('Open-Source-Lizenzen')),
+        PopupMenuButton<String>(tooltip:'Slicer-Informationen',onSelected:(v){if(v=='source'){sources();}else if(v=='step_source'){sources(step:true);}else{showLicensePage(context:context);}},itemBuilder:(_)=>const[
+          PopupMenuItem(value:'source',child:Text('Slicer-Quellcode herunterladen')),PopupMenuItem(value:'step_source',child:Text('STEP-Importer: Quellcode')),PopupMenuItem(value:'license',child:Text('Open-Source-Lizenzen')),
         ]),
       ]),body:SafeArea(top:false,child:ListView(padding:const EdgeInsets.all(20),children:[
         Text(p.name,style:const TextStyle(fontWeight:FontWeight.w800,fontSize:21)),

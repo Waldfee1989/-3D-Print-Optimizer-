@@ -16,6 +16,7 @@ import 'filament_scanner.dart';
 import 'project_optimizer.dart';
 import 'support_analysis.dart';
 import 'model_3mf.dart';
+import 'step_import.dart';
 import 'print_geometry.dart';
 import 'model_size_dialog.dart';
 import 'build_plate.dart';
@@ -35,26 +36,33 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
-  LicenseRegistry.addLicense(() async* { yield LicenseEntryWithLineBreaks(['Manifold'],await rootBundle.loadString('assets/licenses/Manifold.txt'));for(final name in ['CuraEngine','Cura','GPL-3.0','CuraEngine-Clipper','CuraEngine-RapidJSON','CuraEngine-stb']){yield LicenseEntryWithLineBreaks([name],await rootBundle.loadString('assets/licenses/$name.txt'));} });
+  LicenseRegistry.addLicense(() async* { yield LicenseEntryWithLineBreaks(['Manifold'],await rootBundle.loadString('assets/licenses/Manifold.txt'));for(final name in ['occt-import-js','occt','CuraEngine','Cura','GPL-3.0','CuraEngine-Clipper','CuraEngine-RapidJSON','CuraEngine-stb']){yield LicenseEntryWithLineBreaks([name],await rootBundle.loadString('assets/licenses/$name.txt'));} });
   runApp(const OptimizerApp());
 }
 
-Future<(String,Uint8List)?> chooseModelBytes() async {
+Future<(String,Uint8List)?> chooseModelBytes(BuildContext context) async {
   final result = await FilePicker.platform.pickFiles(type: FileType.custom,
-    allowedExtensions: ['stl','3mf'],withData: false);
+    allowedExtensions: ['stl','3mf','step','stp'],withData: false);
   if (result == null) return null;
   final file = result.files.single;
-  const maximum = 100*1024*1024;
+  final maximum = isStepFile(file.name)?maxStepBytes:100*1024*1024;
   if (file.size > maximum || (file.path != null && await File(file.path!).length() > maximum))
-    throw const FormatException('Datei ist größer als 100 MB.');
+    throw FormatException(isStepFile(file.name)?'STEP-Dateien bis 20 MB werden unterstützt.':'Datei ist größer als 100 MB.');
   final bytes = file.bytes ?? (file.path == null ? null : await File(file.path!).readAsBytes());
   if (bytes == null) throw const FormatException('Datei konnte nicht gelesen werden.');
-  if (bytes.length > maximum) throw const FormatException('Datei ist größer als 100 MB.');
+  if (bytes.length > maximum) throw FormatException(isStepFile(file.name)?'STEP-Dateien bis 20 MB werden unterstützt.':'Datei ist größer als 100 MB.');
+  if(isStepFile(file.name)){
+    if(!context.mounted)return null;
+    final converted=await importStep(context,bytes,file.name);
+    return converted==null?null:(file.name,converted);
+  }
   return (file.name,bytes);
 }
-Future<PlatePart?> pickPlatePart() async {
-  final input = await chooseModelBytes();
-  return input == null ? null : compute(_MeshReader.plateInBackground,input);
+PlatePart readPlateModel((String,Uint8List) input)=>_MeshReader.plateInBackground(input);
+
+Future<PlatePart?> pickPlatePart(BuildContext context) async {
+  final input = await chooseModelBytes(context);
+  return input == null ? null : compute(readPlateModel,input);
 }
 
 class OptimizerApp extends StatelessWidget {
@@ -220,7 +228,7 @@ class _HomePageState extends State<HomePage> {
   Future<void> openBuildPlate() async {
     if (bed == null) await setup();
     if (!mounted || bed == null) return;
-    await Navigator.push(context,MaterialPageRoute(builder: (_) => BuildPlatePage(pickPart: pickPlatePart,bed: bed!,printer: printer)));
+    await Navigator.push(context,MaterialPageRoute(builder: (_) => BuildPlatePage(pickPart: ()=>pickPlatePart(context),bed: bed!,printer: printer)));
   }
   void openLowStock() => Navigator.push(context,MaterialPageRoute(builder: (_) => LowStockPage(stock: stock,
     threshold: lowStockThreshold,onThresholdChanged: (value) { if (mounted) setState(() => lowStockThreshold = value); })));
@@ -231,7 +239,7 @@ class _HomePageState extends State<HomePage> {
     if(part==null||!mounted)return;
     final project=StudioProject(id:DateTime.now().microsecondsSinceEpoch.toString(),name:part.name,
       printer:printer,slicer:slicer,nozzle:nozzle,bed:bed!,parts:[PlatePlacement(id:'0',part:part,x:bed!.width/2,y:bed!.depth/2)]);
-    await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:pickPlatePart,project:project,openSettings:true)));
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:()=>pickPlatePart(context),project:project,openSettings:true)));
   }
 
   Future<void> openPhoto()async{
@@ -266,7 +274,7 @@ class _HomePageState extends State<HomePage> {
             StudioTool(title:'Druckplatte',subtitle:'Mehrere Teile zusammenstellen',icon:Icons.dashboard_customize_outlined,
               color:const Color(0xffda6b37),onTap:openBuildPlate),
             StudioTool(title:'Druckprojekte',subtitle:'Gespeicherte Einstellungen',icon:Icons.folder_copy_outlined,
-              color:studioPurple,onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>StudioProjectsPage(pickPart:pickPlatePart)))),
+              color:studioPurple,onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>StudioProjectsPage(pickPart:()=>pickPlatePart(context))))),
             StudioTool(title:'Meine Düsen',subtitle:'Dein Bestand, passend zum Druck',icon:Icons.settings_input_component_outlined,
               color:const Color(0xff3776be),onTap:()=>Navigator.push(context,MaterialPageRoute(builder:(_)=>NozzleInventoryPage(printer:printer,installed:nozzle)))),
             StudioTool(title:'Filamentlager',subtitle:'${stock.length} Rollen · ${reorderFilaments(stock,lowStockThreshold).length} nachbestellen',
@@ -522,7 +530,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
   Future<void> openModel() async {
     setState(() { loading = true; error = null; });
     try {
-      final input = await chooseModelBytes();
+      final input = await chooseModelBytes(context);
       if (input == null) return;
       final parsed = await compute(_MeshReader.inBackground,input);
       if (!mounted) return;
@@ -571,7 +579,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
     final parts = await requestModelCut(context,PlatePart(name: fileName ?? 'Modell',vertices: m.renderVertices,
       unitScale: m.radius,width: m.size.x,depth: m.size.y,height: m.size.z),modelScale,bed: printerBed);
     if (!mounted || parts == null) return;
-    await Navigator.push(context,MaterialPageRoute(builder: (_) => BuildPlatePage(pickPart: pickPlatePart,bed: printerBed!,printer: widget.printer,initialParts: parts)));
+    await Navigator.push(context,MaterialPageRoute(builder: (_) => BuildPlatePage(pickPart: ()=>pickPlatePart(context),bed: printerBed!,printer: widget.printer,initialParts: parts)));
   }
   Future<void> saveModel() async {
     final m = mesh;
@@ -600,7 +608,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
       printer:widget.printer,slicer:widget.slicer,nozzle:widget.nozzle,priority:widget.quality,supportStatus:m.supports.status,supportReason:m.supports.reason);
     final project=StudioProject(id:projectId,name:name,printer:widget.printer,slicer:widget.slicer,nozzle:widget.nozzle,bed:bed,
       parts:[PlatePlacement(id:'0',part:part,x:bed.width/2,y:bed.depth/2,scale:modelScale)],recipe:recipe);
-    await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:pickPlatePart,project:project,openSettings:true,repository:widget.projectRepository)));
+    await Navigator.push(context,MaterialPageRoute(builder:(_)=>BuildPlatePage(pickPart:()=>pickPlatePart(context),project:project,openSettings:true,repository:widget.projectRepository)));
   }
 
   @override Widget build(BuildContext context) {
@@ -613,7 +621,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
       body: SafeArea(top: false, child: ListView(padding: const EdgeInsets.all(16), children: [
         FilledButton.icon(onPressed: loading ? null : openModel,
           icon: const Icon(Icons.folder_open),
-          label: Text(loading ? 'Datei wird geladen...' : 'STL / 3MF auswählen')),
+          label: Text(loading ? 'Datei wird geladen...' : 'STL / 3MF / STEP auswählen')),
         if (error != null) Padding(padding: const EdgeInsets.all(12),
           child: Text(error!, style: TextStyle(color: Theme.of(context).colorScheme.error))),
         if (m != null) ...[
@@ -676,7 +684,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
             icon: const Icon(Icons.content_cut),label: const Text('Teilen & verbinden')),
           if (printerBed != null) Text('Bauraum: ${printerBed!.width} × ${printerBed!.depth} × ${printerBed!.height} mm'),
           OutlinedButton.icon(onPressed: loading || printerBed == null ? null : () => Navigator.push(context,MaterialPageRoute(builder: (_) =>
-            BuildPlatePage(pickPart: pickPlatePart,bed: printerBed ?? const PrinterBed(250,250,250),printer: widget.printer,initialScale: modelScale,initialPart: PlatePart(name: fileName ?? 'Modell',
+            BuildPlatePage(pickPart: ()=>pickPlatePart(context),bed: printerBed ?? const PrinterBed(250,250,250),printer: widget.printer,initialScale: modelScale,initialPart: PlatePart(name: fileName ?? 'Modell',
               vertices: m.renderVertices,unitScale: m.radius,width: m.size.x,depth: m.size.y,height: m.size.z)))),
             icon: const Icon(Icons.add),label: const Text('Weitere Datei auf Druckplatte hinzufügen')),
           const StudioHeading('Drucklage & Stützen'),
@@ -699,7 +707,7 @@ class _ModelPreviewPageState extends State<ModelPreviewPage> {
           const SizedBox(height: 32),
           const Icon(Icons.view_in_ar, size: 64),
           const SizedBox(height: 12),
-          const Center(child: Text('Öffne eine STL- oder 3MF-Datei.')),
+          const Center(child: Text('Öffne eine STL-, 3MF- oder STEP-Datei.')),
         ],
       ])),
     );

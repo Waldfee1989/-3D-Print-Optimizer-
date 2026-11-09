@@ -67,7 +67,7 @@ class StudioHero extends StatelessWidget {
         ]),
         const SizedBox(height:22),
         SizedBox(width:double.infinity,child:FilledButton.icon(onPressed:onOpen,
-          icon:const Icon(Icons.add_rounded),label:const Text('STL / 3MF öffnen'))),
+          icon:const Icon(Icons.add_rounded),label:const Text('STL / 3MF / STEP öffnen'))),
       ]))));
 }
 

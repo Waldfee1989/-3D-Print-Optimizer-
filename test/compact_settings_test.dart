@@ -32,7 +32,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(const OptimizerApp());
     await tester.pumpAndSettle();
-    expect(find.text('STL / 3MF öffnen'), findsOneWidget);
+    expect(find.text('STL / 3MF / STEP öffnen'), findsOneWidget);
     expect(find.text('Weitere Funktionen folgen'), findsNothing);
     await reveal(tester,find.text('Filamentlager'));
     await tester.tap(find.text('Filamentlager'));
