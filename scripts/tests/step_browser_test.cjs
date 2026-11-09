@@ -9,7 +9,7 @@ const root=path.resolve(__dirname,'../..');
   page.on('console',message=>{if(message.type()==='error')console.error('Local browser:',message.text());});
   page.on('pageerror',error=>console.error('Local page:',error.message));
   page.on('request',request=>{if(/^https?:/.test(request.url()))network.push(request.url());});
-  const file=fs.readFileSync(process.argv[2]||path.join(root,'build/step-importer/fixtures/simple-basic-cube/cube.stp'));
+  const file=fs.readFileSync(process.argv[2]||path.join(root,'build/step-importer/fixtures/cax-if/as1_pe_203.stp'));
   let resolve,reject;const done=new Promise((r,j)=>{resolve=r;reject=j;});const chunks=[];let received=0,expected=0,acks=0;
   await page.exposeFunction('nativeStepMessage',async text=>{
    try{
@@ -30,7 +30,7 @@ const root=path.resolve(__dirname,'../..');
   await page.addInitScript(()=>{window.StepBridge={postMessage:s=>window.nativeStepMessage(s)};});
   await page.goto(pathToFileURL(path.join(root,'assets/step/index.html')).href);
   let timeout;const stl=await Promise.race([done,new Promise((_,j)=>{timeout=setTimeout(()=>j(Error('STEP browser timeout')),45000);})]);clearTimeout(timeout);
-  assert.equal(stl.length,84+stl.readUInt32LE(80)*50);assert.ok(acks>0);assert.deepEqual(network,[]);
+  assert.equal(stl.length,84+stl.readUInt32LE(80)*50);assert.ok(acks>1);assert.deepEqual(network,[]);
   await page.evaluate(()=>window.stepCancel());
   assert.equal(await page.evaluate(()=>worker===null&&input===null&&output===null),true);
   console.log(`Offline browser bridge passed: ${stl.readUInt32LE(80)} triangles, ${acks} acknowledged chunks, no network.`);
