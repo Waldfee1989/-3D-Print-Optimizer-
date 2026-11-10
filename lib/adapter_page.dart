@@ -1,8 +1,5 @@
-import 'dart:async';
 import 'dart:io';
-import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'adapter_geometry.dart';
@@ -10,7 +7,9 @@ import 'adapter_request.dart';
 import 'adapter_measure_sketch.dart';
 import 'app_design.dart';
 import 'build_plate.dart';
-import 'mesh_renderer.dart';
+import 'component_geometry.dart';
+import 'component_page.dart';
+import 'component_preview.dart';
 
 const voiceChannel=MethodChannel('print_optimizer/voice');
 class AdapterPage extends StatefulWidget {
@@ -22,6 +21,7 @@ class AdapterPage extends StatefulWidget {
 class _AdapterPageState extends State<AdapterPage>{
   late final draft=widget.initialDraft??AdapterDraft();
   final answer=TextEditingController();
+  ComponentShape shape=ComponentShape.adapter;
   DiameterKind? kind;PlatePart? created;
   String? error,transcript;bool busy=false;
   Future<void> editSketchField(AdapterField field)async{
@@ -56,7 +56,7 @@ class _AdapterPageState extends State<AdapterPage>{
   void apply(String text){
     setState((){
       error=draft.answer(text,kind:kind)?null:'Angabe nicht erkannt. Bitte die Größe und bei Durchmessern innen oder außen angeben.';
-      if(error==null){answer.clear();kind=null;}
+      if(error==null){answer.clear();kind=null;created=null;}
     });
   }
   Future<void> speak()async{
@@ -76,7 +76,14 @@ class _AdapterPageState extends State<AdapterPage>{
     finally{if(mounted)setState(()=>busy=false);}
   }
   @override void dispose(){answer.dispose();super.dispose();}
+  Widget shapeChooser()=>DropdownButtonFormField<ComponentShape>(
+    key:ValueKey(shape),initialValue:shape,isExpanded:true,
+    decoration:const InputDecoration(labelText:'Welche Form hat dein Bauteil?'),
+    items:[for(final value in ComponentShape.values)DropdownMenuItem(value:value,child:Text(value.label,overflow:TextOverflow.ellipsis))],
+    onChanged:busy?null:(value){if(value!=null)setState((){shape=value;created=null;error=null;});},
+  );
   @override Widget build(BuildContext context){
+    if(shape!=ComponentShape.adapter)return ComponentBuilderPage(key:ValueKey(shape),shape:shape,chooser:shapeChooser());
     final invalid=draft.complete?draft.spec().validate():null;
     String mm(double value)=>'${value.toStringAsFixed(2).replaceAll(RegExp(r'0+$'),'').replaceAll(RegExp(r'\.$'),'')} mm';
     final rows=<(AdapterField,String,String)>[
@@ -89,11 +96,12 @@ class _AdapterPageState extends State<AdapterPage>{
     return Scaffold(appBar:AppBar(title:const Text('Bauteil erstellen'),actions:[
       TextButton(onPressed:busy||!draft.complete||invalid!=null?null:created==null?create:()=>Navigator.pop(context,created),child:Text(created==null?'Erstellen':'Übernehmen')),
     ]),body:SafeArea(top:false,child:ListView(padding:const EdgeInsets.all(20),children:[
-      const StudioHeading('Beschreiben. Prüfen. Erstellen.',subtitle:'Vorlage: Runder Übergang mit zwei Steckseiten.'),
+      shapeChooser(),const SizedBox(height:20),
+      const StudioHeading('Beschreiben. Prüfen. Erstellen.',subtitle:'Runder Übergang mit zwei Steckseiten. Für andere Bauteile oben die Form wählen.'),
       OutlinedButton.icon(onPressed:busy?null:openSketch,icon:const Icon(Icons.design_services_outlined),label:const Text('Maß in Skizze eintragen')),
       const SizedBox(height:12),
       if(created!=null)...[
-        _AdapterPreview(part:created!),const SizedBox(height:12),
+        ComponentPreview(part:created!),const SizedBox(height:12),
         Text('Modell: ${created!.width.toStringAsFixed(1)} × ${created!.depth.toStringAsFixed(1)} × ${created!.height.toStringAsFixed(1)} mm'),
         TextButton(onPressed:()=>setState(()=>created=null),child:const Text('Maße ändern')),
       ]else...[
@@ -181,28 +189,4 @@ class _DimensionEntryDialogState extends State<_DimensionEntryDialog>{
         keyboardType:TextInputType.text,textInputAction:TextInputAction.done,onSubmitted:(_)=>save()),
     ]),actions:[TextButton(onPressed:()=>Navigator.pop(context),child:const Text('Abbrechen')),FilledButton(onPressed:save,child:const Text('Maß speichern'))]);
   }
-}
-class _AdapterPreview extends StatefulWidget {
-  const _AdapterPreview({required this.part});final PlatePart part;
-  @override State<_AdapterPreview> createState()=>_AdapterPreviewState();
-}
-class _AdapterPreviewState extends State<_AdapterPreview>{
-  ui.Image? image;double x=25,y=30;int revision=0;bool rendering=false;
-  @override void initState(){super.initState();render();}
-  Future<void> render()async{
-    revision++;if(rendering)return;rendering=true;
-    try{while(mounted){
-      final request=revision,pixels=await compute(renderMesh,MeshRenderRequest(widget.part.vertices,300,300,x,y,1));
-      if(!mounted)return;
-      final complete=Completer<ui.Image>();ui.decodeImageFromPixels(pixels,300,300,ui.PixelFormat.rgba8888,complete.complete);
-      final next=await complete.future;
-      if(!mounted||request!=revision){next.dispose();if(!mounted)return;continue;}
-      final old=image;setState(()=>image=next);if(old!=null)WidgetsBinding.instance.addPostFrameCallback((_)=>old.dispose());break;
-    }}finally{rendering=false;}
-  }
-  @override void dispose(){image?.dispose();super.dispose();}
-  @override Widget build(BuildContext context)=>ClipRRect(borderRadius:BorderRadius.circular(24),child:Container(height:280,color:const Color(0xff1c1a2d),
-    child:RawGestureDetector(gestures:{EagerGestureRecognizer:GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(()=>EagerGestureRecognizer(),(_){})},
-      child:Listener(behavior:HitTestBehavior.opaque,onPointerMove:(event){x=(x+event.delta.dy).clamp(-180.0,180.0).toDouble();y=(y+event.delta.dx).clamp(-180.0,180.0).toDouble();render();},
-        child:image==null?const Center(child:CircularProgressIndicator()):RawImage(image:image,fit:BoxFit.contain)))));
 }

@@ -1,7 +1,7 @@
-name: Adapter-Geometrie pruefen
+name: Bauteil-Geometrie pruefen
 on:
   push:
-    branches: [voice-adapter]
+    branches: [voice-adapter, component-shapes, main]
   workflow_dispatch:
 permissions:
   contents: read
@@ -23,6 +23,6 @@ jobs:
           if '\ndev_dependencies:' not in text:p.write_text(text+'\ndev_dependencies:\n  flutter_test:\n    sdk: flutter\n')
           PY
       - run: flutter pub get
-      - run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/adapter_geometry.dart lib/adapter_request.dart lib/adapter_page.dart
-      - run: flutter test test/adapter_geometry_test.dart test/adapter_page_test.dart --reporter expanded
+      - run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/adapter_geometry.dart lib/adapter_request.dart lib/adapter_page.dart lib/component_geometry.dart lib/component_page.dart lib/component_preview.dart
+      - run: flutter test test/adapter_geometry_test.dart test/adapter_page_test.dart test/component_geometry_test.dart test/component_page_test.dart --reporter expanded
       - run: python3 -m unittest discover -s scripts/tests -v
